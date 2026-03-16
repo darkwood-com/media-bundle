@@ -1,0 +1,21 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Application\Trailer\Port;
+
+interface ArtifactStorageInterface
+{
+    /**
+     * Store a file from the given local path under the given key.
+     * Returns the path or identifier where the artifact can be retrieved.
+     */
+    public function put(string $key, string $sourcePath): string;
+
+    /**
+     * Get the path to a stored artifact, or null if not found.
+     */
+    public function getPath(string $key): ?string;
+
+    public function exists(string $key): bool;
+}
