@@ -31,6 +31,13 @@ services:
     App\Application\Trailer\Port\ArtifactStorageInterface:
         alias: App\Infrastructure\Trailer\Storage\LocalArtifactStorage
 
+    # Fake voice/video providers for MVP (no external AI APIs)
+    App\Application\Trailer\Port\VoiceGenerationProviderInterface:
+        alias: App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider
+
+    App\Application\Trailer\Port\VideoGenerationProviderInterface:
+        alias: App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider
+
     App\Infrastructure\Trailer\Storage\TrailerPathResolver:
         arguments:
             $projectDir: '%kernel.project_dir%'
