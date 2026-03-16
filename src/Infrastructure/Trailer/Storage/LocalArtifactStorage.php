@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\Trailer\Storage;
 
 use App\Application\Trailer\Port\ArtifactStorageInterface;
+use App\Application\Trailer\Port\TrailerProjectSetupInterface;
 use App\Domain\Trailer\Scene;
 
-final class LocalArtifactStorage implements ArtifactStorageInterface
+final class LocalArtifactStorage implements ArtifactStorageInterface, TrailerProjectSetupInterface
 {
     public function __construct(
         private readonly TrailerPathResolver $pathResolver,
