@@ -41,6 +41,9 @@ services:
     App\Application\Trailer\Port\VideoGenerationProviderInterface:
         alias: App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider
 
+    App\Application\Trailer\Port\TrailerRendererInterface:
+        alias: App\Infrastructure\Trailer\Rendering\ManifestTrailerRenderer
+
     App\Infrastructure\Trailer\Storage\TrailerPathResolver:
         arguments:
             $projectDir: '%kernel.project_dir%'

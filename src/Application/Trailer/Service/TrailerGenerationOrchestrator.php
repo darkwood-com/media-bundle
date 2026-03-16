@@ -76,8 +76,10 @@ final class TrailerGenerationOrchestrator
 
         $renderOutputPath = null;
         if ($project->status()->value === 'completed') {
-            $renderOutputPath = $this->projectSetup->getRenderOutputPath($projectId);
-            $this->renderer->render($project, $renderOutputPath);
+            $renderOutputPath = $this->renderer->render(
+                $project,
+                $this->projectSetup->getRenderOutputPath($projectId)
+            );
             $this->projectRepository->save($project);
         }
 
