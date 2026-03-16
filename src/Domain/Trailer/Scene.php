@@ -102,4 +102,16 @@ final class Scene
     {
         $this->duration = $duration;
     }
+
+    /**
+     * Reset scene for rerun: clear assets, set status to Pending.
+     * Used when regenerating a single scene from a saved project.
+     */
+    public function resetForRerun(): void
+    {
+        $this->assets = [];
+        $this->status = SceneStatus::Pending;
+        $this->lastError = null;
+        $this->duration = null;
+    }
 }
