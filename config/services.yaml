@@ -27,5 +27,13 @@ services:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
+    # Trailer artifact storage (local filesystem)
+    App\Application\Trailer\Port\ArtifactStorageInterface:
+        alias: App\Infrastructure\Trailer\Storage\LocalArtifactStorage
+
+    App\Infrastructure\Trailer\Storage\TrailerPathResolver:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
