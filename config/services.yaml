@@ -19,5 +19,13 @@ services:
     App\:
         resource: '../src/'
 
+    # Trailer project persistence (file-based)
+    App\Application\Trailer\Port\TrailerProjectRepositoryInterface:
+        alias: App\Infrastructure\Trailer\Persistence\FileTrailerProjectRepository
+
+    App\Infrastructure\Trailer\Persistence\FileTrailerProjectRepository:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
