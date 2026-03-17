@@ -89,13 +89,18 @@ final class SceneGenerationService
                 'target_path' => $targetPath,
                 'scene_id' => $scene->id(),
             ]);
-            $asset->complete($result->path, $result->metadata);
+            $metadata = $this->normalizeAssetMetadata($result->metadata, $result->path);
+            $asset->complete($result->path, $metadata);
             if ($result->duration !== null) {
                 $scene->setDuration($result->duration);
             }
             return true;
         } catch (\Throwable $e) {
             $message = 'Voice generation failed: ' . $e->getMessage();
+            $asset->updateMetadata([
+                'provider_state' => 'error',
+                'provider_error_message' => $e->getMessage(),
+            ]);
             $asset->fail($message);
             $scene->fail($message);
             return false;
@@ -112,16 +117,48 @@ final class SceneGenerationService
                 'scene_id' => $scene->id(),
                 'scene_number' => $scene->number(),
             ]);
-            $asset->complete($result->path, $result->metadata);
+            $metadata = $this->normalizeAssetMetadata($result->metadata, $result->path);
+            $asset->complete($result->path, $metadata);
             if ($result->duration !== null && $scene->duration() === null) {
                 $scene->setDuration($result->duration);
             }
             return true;
         } catch (\Throwable $e) {
             $message = 'Video generation failed: ' . $e->getMessage();
+            $asset->updateMetadata([
+                'provider_state' => 'error',
+                'provider_error_message' => $e->getMessage(),
+            ]);
             $asset->fail($message);
             $scene->fail($message);
             return false;
         }
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeAssetMetadata(array $metadata, string $localPath): array
+    {
+        // Always include the final local artifact path explicitly in metadata.
+        $normalized = $metadata;
+        $normalized['local_path'] = $localPath;
+
+        // Standard aliases for remote job lifecycle while preserving provider-specific keys.
+        if (isset($metadata['prediction_id']) && !isset($normalized['remote_job_id'])) {
+            $normalized['remote_job_id'] = $metadata['prediction_id'];
+        }
+
+        if (isset($metadata['provider_status']) && !isset($normalized['provider_state'])) {
+            $normalized['provider_state'] = $metadata['provider_status'];
+        }
+
+        if (isset($metadata['remote_output_url']) && !isset($normalized['remote_output_url'])) {
+            $normalized['remote_output_url'] = $metadata['remote_output_url'];
+        }
+
+        return $normalized;
     }
 }
