@@ -110,6 +110,7 @@ final class SceneGenerationService
             $result = $this->videoProvider->generateVideo($prompt, [
                 'target_path' => $targetPath,
                 'scene_id' => $scene->id(),
+                'scene_number' => $scene->number(),
             ]);
             $asset->complete($result->path, $result->metadata);
             if ($result->duration !== null && $scene->duration() === null) {

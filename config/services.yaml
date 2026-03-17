@@ -7,7 +7,7 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
-
+    trailer.video.real_for_first_scene_only: false
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -38,8 +38,17 @@ services:
     App\Application\Trailer\Port\VoiceGenerationProviderInterface:
         alias: App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider
 
+    # Scene-aware video provider: keeps fake as default, optionally routes scene 1 to a real provider.
     App\Application\Trailer\Port\VideoGenerationProviderInterface:
-        alias: App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider
+        alias: App\Application\Trailer\Service\SceneAwareVideoGenerationProvider
+
+    App\Application\Trailer\Service\SceneAwareVideoGenerationProvider:
+        arguments:
+            $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider'
+            # Define App\Infrastructure\Trailer\Provider\RealVideoGenerationProvider when ready;
+            # until then this stays null and everything uses the fake provider.
+            $realProvider: '@?App\Infrastructure\Trailer\Provider\RealVideoGenerationProvider'
+            $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
 
     App\Application\Trailer\Port\TrailerRendererInterface:
         alias: App\Infrastructure\Trailer\Rendering\ManifestTrailerRenderer
