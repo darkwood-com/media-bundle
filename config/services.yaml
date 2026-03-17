@@ -53,9 +53,8 @@ services:
     App\Application\Trailer\Service\SceneAwareVideoGenerationProvider:
         arguments:
             $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider'
-            # Define App\Infrastructure\Trailer\Provider\RealVideoGenerationProvider when ready;
-            # until then this stays null and everything uses the fake provider.
-            $realProvider: '@?App\Infrastructure\Trailer\Provider\RealVideoGenerationProvider'
+            # Optionally route the first scene to a real provider backed by Replicate.
+            $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
             $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
 
     # Replicate video provider configuration object
