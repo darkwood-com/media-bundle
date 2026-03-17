@@ -8,6 +8,14 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     trailer.video.real_for_first_scene_only: false
+
+    # Replicate video provider configuration (env-driven)
+    # Secrets (API token) must be provided via real env or .env.local files.
+    trailer.video.replicate.enabled: '%env(bool:default::TRAILER_VIDEO_REPLICATE_ENABLED)%'
+    trailer.video.replicate.api_token: '%env(string:default::TRAILER_VIDEO_REPLICATE_API_TOKEN)%'
+    trailer.video.replicate.model: '%env(string:default::TRAILER_VIDEO_REPLICATE_MODEL)%'
+    trailer.video.replicate.poll_interval_seconds: '%env(int:default::TRAILER_VIDEO_REPLICATE_POLL_INTERVAL_SECONDS)%'
+    trailer.video.replicate.max_attempts: '%env(int:default::TRAILER_VIDEO_REPLICATE_MAX_ATTEMPTS)%'
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -49,6 +57,15 @@ services:
             # until then this stays null and everything uses the fake provider.
             $realProvider: '@?App\Infrastructure\Trailer\Provider\RealVideoGenerationProvider'
             $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
+
+    # Replicate video provider configuration object
+    App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig:
+        arguments:
+            $enabled: '%trailer.video.replicate.enabled%'
+            $apiToken: '%trailer.video.replicate.api_token%'
+            $model: '%trailer.video.replicate.model%'
+            $pollIntervalSeconds: '%trailer.video.replicate.poll_interval_seconds%'
+            $maxAttempts: '%trailer.video.replicate.max_attempts%'
 
     App\Application\Trailer\Port\TrailerRendererInterface:
         alias: App\Infrastructure\Trailer\Rendering\ManifestTrailerRenderer
