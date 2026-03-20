@@ -8,6 +8,8 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     trailer.video.real_for_first_scene_only: true
+    # Voice: route scene 1 to Replicate TTS when enabled; other scenes stay fake. Defaults follow video scene-1 rollout.
+    trailer.voice.real_for_first_scene_only: '%trailer.video.real_for_first_scene_only%'
 
     # Replicate video provider configuration (env-driven)
     # Secrets (API token) must be provided via real env or .env.local files.
@@ -60,7 +62,7 @@ services:
         arguments:
             $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider'
             $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVoiceGenerationProvider'
-            $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
+            $useRealForFirstSceneOnly: '%trailer.voice.real_for_first_scene_only%'
 
     # Scene-aware video provider: keeps fake as default, optionally routes scene 1 to a real provider.
     App\Application\Trailer\Port\VideoGenerationProviderInterface:

@@ -8,8 +8,8 @@ use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VoiceGenerationProviderInterface;
 
 /**
- * Routes scene 1 to the real TTS provider when enabled; other scenes use fake audio.
- * Mirrors {@see SceneAwareVideoGenerationProvider} and shares the same first-scene flag.
+ * When $useRealForFirstSceneOnly is true and a real provider is wired, scene 1 uses Replicate TTS; other scenes use fake audio.
+ * Toggle: parameter trailer.voice.real_for_first_scene_only (config/services.yaml).
  */
 final class SceneAwareVoiceGenerationProvider implements VoiceGenerationProviderInterface
 {
