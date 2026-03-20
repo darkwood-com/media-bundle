@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\Application\Trailer\Service\TrailerGenerationOrchestrator;
+use App\Application\Trailer\Port\TrailerGenerationOrchestratorInterface;
+use App\Domain\Trailer\Asset;
+use App\Domain\Trailer\Enum\AssetStatus;
 use App\Domain\Trailer\Enum\AssetType;
 use App\Domain\Trailer\Enum\ProjectStatus;
+use App\Domain\Trailer\Scene;
 use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Command\Command;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use Symfony\Component\Console\Input\InputArgument;
@@ -25,7 +29,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 final class GenerateTrailerCliCommand extends Command
 {
     public function __construct(
-        private readonly TrailerGenerationOrchestrator $orchestrator,
+        private readonly TrailerGenerationOrchestratorInterface $orchestrator,
         private readonly KernelInterface $kernel,
     ) {
         parent::__construct();
@@ -141,6 +145,16 @@ final class GenerateTrailerCliCommand extends Command
         $scenes = $project->scenes();
         $firstScene = $scenes[0] ?? null;
         if ($firstScene !== null) {
+            $io->writeln('');
+            $io->section('Scene 1 — provider routing');
+            $this->renderScene1ProviderRoutingSummary(
+                $io,
+                $firstScene,
+                $result->benchmarkReportPaths !== null,
+            );
+        }
+
+        if ($firstScene !== null) {
             $videoAssets = [];
             foreach ($firstScene->assets() as $asset) {
                 if ($asset->type() === AssetType::Video) {
@@ -237,8 +251,8 @@ final class GenerateTrailerCliCommand extends Command
                 }
 
                 $io->writeln('');
-                $io->writeln(sprintf(
-                    'Detailed provider metadata is stored in %s/project.json',
+                $io->text(sprintf(
+                    '<comment>Extra metadata</comment> (prediction ids, URLs, timings) — %s/project.json',
                     $outputDir
                 ));
             }
@@ -338,5 +352,152 @@ final class GenerateTrailerCliCommand extends Command
         }
 
         return $opts;
+    }
+
+    /**
+     * Makes Scene 1 fake-vs-real routing obvious without opening project.json.
+     */
+    private function renderScene1ProviderRoutingSummary(SymfonyStyle $io, Scene $firstScene, bool $isVideoBenchmark): void
+    {
+        $voice = null;
+        /** @var list<Asset> $videos */
+        $videos = [];
+        foreach ($firstScene->assets() as $asset) {
+            if ($asset->type() === AssetType::Voice) {
+                $voice = $asset;
+            } elseif ($asset->type() === AssetType::Video) {
+                $videos[] = $asset;
+            }
+        }
+
+        $io->writeln('<fg=cyan>Voice</>');
+        if ($voice === null) {
+            $io->writeln('  <comment>No voice asset.</comment>');
+        } else {
+            foreach ($this->routingDetailLines($voice) as $line) {
+                $io->writeln($line);
+            }
+        }
+
+        $io->writeln('');
+        $io->writeln('<fg=cyan>Video</>');
+        if ($videos === []) {
+            $io->writeln('  <comment>No video asset.</comment>');
+        } elseif ($isVideoBenchmark && count($videos) > 1) {
+            $io->writeln(sprintf(
+                '  <info>Benchmark:</info> %d clip(s) run via <info>direct Replicate</info> (not the scene-router fake fallback).',
+                count($videos)
+            ));
+            $failed = array_values(array_filter($videos, static fn (Asset $a): bool => $a->status() === AssetStatus::Failed));
+            if ($failed !== []) {
+                $io->writeln(sprintf('  <fg=red>%d benchmark clip(s) failed.</>', count($failed)));
+                foreach ($failed as $asset) {
+                    $err = $asset->lastError();
+                    if (is_string($err) && $err !== '') {
+                        $io->writeln('    <fg=yellow>' . OutputFormatter::escape($this->truncateForCli($err, 360)) . '</>');
+                    }
+                }
+            } else {
+                foreach ($videos as $i => $asset) {
+                    $md = $asset->metadata();
+                    $preset = $md['replicate_preset'] ?? null;
+                    $p = (string) ($md['provider'] ?? $asset->provider() ?? 'unknown');
+                    $label = is_string($preset) && $preset !== '' ? $preset : sprintf('#%d', $i + 1);
+                    $io->writeln(sprintf(
+                        '  <comment>%s</> → final <info>%s</>',
+                        OutputFormatter::escape($label),
+                        OutputFormatter::escape($p)
+                    ));
+                }
+            }
+        } else {
+            foreach ($videos as $i => $asset) {
+                if ($i > 0) {
+                    $io->writeln('');
+                }
+                if (count($videos) > 1) {
+                    $io->writeln(sprintf('  <comment>%s</>', OutputFormatter::escape($asset->id())));
+                }
+                foreach ($this->routingDetailLines($asset) as $line) {
+                    $io->writeln($line);
+                }
+            }
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function routingDetailLines(Asset $asset): array
+    {
+        $md = $asset->metadata();
+
+        if (($md['skipped'] ?? false) === true) {
+            $reason = isset($md['reason']) && is_string($md['reason']) && $md['reason'] !== ''
+                ? $md['reason']
+                : 'skipped';
+
+            return [
+                sprintf('  <comment>Skipped</> — %s', OutputFormatter::escape($reason)),
+            ];
+        }
+
+        if ($asset->status() === AssetStatus::Failed) {
+            $msg = $asset->lastError();
+            $lines = ['  <fg=red>Failed</> — generation did not complete.'];
+            if (is_string($msg) && $msg !== '') {
+                $lines[] = '  Error: <fg=yellow>' . OutputFormatter::escape($this->truncateForCli($msg, 400)) . '</>';
+            }
+            $detail = $md['provider_error_message'] ?? null;
+            if (is_string($detail) && $detail !== '' && $detail !== $msg) {
+                $lines[] = '  Provider: <fg=yellow>' . OutputFormatter::escape($this->truncateForCli($detail, 400)) . '</>';
+            }
+
+            return $lines;
+        }
+
+        $provider = (string) ($md['provider'] ?? $asset->provider() ?? 'unknown');
+        $fallback = ($md['fallback_from'] ?? null) === 'real';
+        $realErr = $md['real_attempt_error_message'] ?? null;
+
+        $isReplicate = str_starts_with($provider, 'replicate-');
+        $isFake = str_starts_with($provider, 'fake-');
+
+        $lines = [];
+
+        if ($isReplicate && !$fallback) {
+            $lines[] = '  Real provider attempted: <info>yes</> (succeeded)';
+            $lines[] = '  Fake fallback used: <info>no</>';
+        } elseif ($isFake && $fallback) {
+            $lines[] = '  Real provider attempted: <info>yes</> (failed)';
+            $lines[] = '  Fake fallback used: <comment>yes</>';
+        } elseif ($isFake && !$fallback) {
+            $lines[] = '  Real provider attempted: <comment>no</>';
+            $lines[] = '  Fake fallback used: <info>no</>';
+            $lines[] = '  <comment>Tip:</> enable/wire Replicate and scene-1 real routing to use live models.';
+        } else {
+            $lines[] = '  Real provider attempted: <comment>unknown</>';
+            $lines[] = '  Fake fallback used: ' . ($fallback ? '<comment>yes</>' : '<info>no</>');
+        }
+
+        $lines[] = sprintf(
+            '  Final provider (stored asset): <options=bold>%s</>',
+            OutputFormatter::escape($provider)
+        );
+
+        if ($isFake && $fallback && is_string($realErr) && $realErr !== '') {
+            $lines[] = '  Real attempt error: <fg=yellow>' . OutputFormatter::escape($this->truncateForCli($realErr, 420)) . '</>';
+        }
+
+        return $lines;
+    }
+
+    private function truncateForCli(string $message, int $maxLength): string
+    {
+        if ($maxLength < 4 || strlen($message) <= $maxLength) {
+            return $message;
+        }
+
+        return substr($message, 0, $maxLength - 3) . '…';
     }
 }

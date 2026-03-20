@@ -20,36 +20,27 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
 
-        $createResponse = $this->createMock(ResponseInterface::class);
-        $pollResponse1 = $this->createMock(ResponseInterface::class);
-        $pollResponse2 = $this->createMock(ResponseInterface::class);
+        $resolvedVersionId = str_repeat('c', 64);
+        $modelMetaResponse = $this->jsonHttpResponse([
+            'owner' => 'minimax',
+            'name' => 'speech-2.6-turbo',
+            'latest_version' => ['id' => $resolvedVersionId],
+        ]);
+        $createResponse = $this->jsonHttpResponse([
+            'id' => 'pred-voice-1',
+            'status' => 'starting',
+        ]);
+        $pollResponse1 = $this->jsonHttpResponse([
+            'id' => 'pred-voice-1',
+            'status' => 'processing',
+        ]);
+        $pollResponse2 = $this->jsonHttpResponse([
+            'id' => 'pred-voice-1',
+            'status' => 'succeeded',
+            'output' => 'https://cdn.example.com/voice.mp3',
+            'metrics' => ['duration' => 2.5],
+        ]);
         $downloadResponse = $this->createMock(ResponseInterface::class);
-
-        $createResponse
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-voice-1',
-                'status' => 'starting',
-            ]);
-
-        $pollResponse1
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-voice-1',
-                'status' => 'processing',
-            ]);
-
-        $pollResponse2
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-voice-1',
-                'status' => 'succeeded',
-                'output' => 'https://cdn.example.com/voice.mp3',
-                'metrics' => ['duration' => 2.5],
-            ]);
 
         $downloadResponse
             ->method('getStatusCode')
@@ -63,16 +54,20 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
         $postJson = null;
         $pollCount = 0;
         $httpClient
-            ->expects($this->exactly(4))
+            ->expects($this->exactly(5))
             ->method('request')
             ->willReturnCallback(function (string $method, string $url, array $opts = []) use (
                 &$postJson,
                 &$pollCount,
+                $modelMetaResponse,
                 $createResponse,
                 $pollResponse1,
                 $pollResponse2,
                 $downloadResponse
             ) {
+                if ($method === 'GET' && str_contains($url, '/models/minimax/speech-2.6-turbo')) {
+                    return $modelMetaResponse;
+                }
                 if ($method === 'POST' && str_contains($url, '/predictions')) {
                     $postJson = $opts['json'] ?? null;
 
@@ -123,10 +118,11 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
             self::assertSame('scene-1', $result->metadata['scene_id'] ?? null);
             self::assertSame('Hello from the forest', $result->metadata['narration'] ?? null);
             self::assertSame('Wise_Woman', $result->metadata['voice_id'] ?? null);
+            self::assertSame($resolvedVersionId, $result->metadata['replicate_version'] ?? null);
             self::assertSame('mp3', $result->metadata['audio_format'] ?? null);
 
             self::assertIsArray($postJson);
-            self::assertSame('minimax/speech-2.6-turbo', $postJson['version']);
+            self::assertSame($resolvedVersionId, $postJson['version']);
             self::assertSame('Hello from the forest', $postJson['input']['text']);
             self::assertSame('Wise_Woman', $postJson['input']['voice_id']);
             self::assertSame('mp3', $postJson['input']['audio_format']);
@@ -142,25 +138,15 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
 
-        $createResponse = $this->createMock(ResponseInterface::class);
-        $failedPollResponse = $this->createMock(ResponseInterface::class);
-
-        $createResponse
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-bad',
-                'status' => 'starting',
-            ]);
-
-        $failedPollResponse
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-bad',
-                'status' => 'failed',
-                'error' => 'TTS error',
-            ]);
+        $createResponse = $this->jsonHttpResponse([
+            'id' => 'pred-bad',
+            'status' => 'starting',
+        ]);
+        $failedPollResponse = $this->jsonHttpResponse([
+            'id' => 'pred-bad',
+            'status' => 'failed',
+            'error' => 'TTS error',
+        ]);
 
         $httpClient
             ->expects($this->exactly(2))
@@ -178,7 +164,7 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
 
         $provider = $this->makeProvider($httpClient, new ReplicateVoiceProviderConfig(
             enabled: true,
-            model: 'minimax/speech-2.6-turbo',
+            model: str_repeat('d', 64),
             voiceId: 'Wise_Woman',
             audioFormat: 'mp3',
             pollIntervalSeconds: 0,
@@ -191,9 +177,139 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
             self::fail('Expected ReplicatePredictionFailedException');
         } catch (ReplicatePredictionFailedException $e) {
             self::assertSame('pred-bad', $e->predictionId());
-            self::assertSame('minimax/speech-2.6-turbo', $e->model());
+            self::assertSame(str_repeat('d', 64), $e->model());
             self::assertSame('failed', $e->remoteStatus());
             self::assertSame('TTS error', $e->remoteError());
+        }
+    }
+
+    public function test_empty_voice_id_rejected_before_http(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient->expects($this->never())->method('request');
+
+        $provider = $this->makeProvider($httpClient, new ReplicateVoiceProviderConfig(
+            enabled: true,
+            model: str_repeat('a', 64),
+            voiceId: '',
+            audioFormat: 'mp3',
+            pollIntervalSeconds: 0,
+            maxAttempts: 3,
+            maxPollDurationSeconds: 0,
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('voice_id is empty');
+
+        $provider->generateVoice('Hello');
+    }
+
+    public function test_create_prediction_422_surfaces_replicate_detail(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+
+        $modelMeta = $this->jsonHttpResponse([
+            'latest_version' => ['id' => str_repeat('9', 64)],
+        ]);
+        $errorCreate = $this->jsonHttpResponse(['detail' => 'Input validation failed'], 422);
+
+        $httpClient
+            ->expects($this->exactly(2))
+            ->method('request')
+            ->willReturnCallback(function (string $method, string $url) use ($modelMeta, $errorCreate) {
+                if ($method === 'GET' && str_contains($url, '/models/minimax/speech-2.6-turbo')) {
+                    return $modelMeta;
+                }
+                if ($method === 'POST' && str_contains($url, '/predictions')) {
+                    return $errorCreate;
+                }
+
+                throw new \RuntimeException('Unexpected: ' . $method . ' ' . $url);
+            });
+
+        $provider = $this->makeProvider($httpClient, new ReplicateVoiceProviderConfig(
+            enabled: true,
+            model: 'minimax/speech-2.6-turbo',
+            voiceId: 'Wise_Woman',
+            audioFormat: 'mp3',
+            pollIntervalSeconds: 0,
+            maxAttempts: 3,
+            maxPollDurationSeconds: 0,
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Input validation failed');
+        $this->expectExceptionMessage('HTTP 422');
+
+        $provider->generateVoice('Hi');
+    }
+
+    public function test_placeholder_voice_id_fails_before_http(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient->expects($this->never())->method('request');
+
+        $provider = $this->makeProvider($httpClient, new ReplicateVoiceProviderConfig(
+            enabled: true,
+            model: 'minimax/speech-2.6-turbo',
+            voiceId: 'TON_VOICE_ID',
+            audioFormat: 'mp3',
+            pollIntervalSeconds: 0,
+            maxAttempts: 3,
+            maxPollDurationSeconds: 0,
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('TRAILER_VOICE_REPLICATE_VOICE_ID');
+
+        $provider->generateVoice('Hello');
+    }
+
+    public function test_remote_voice_id_error_includes_config_hint(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+
+        $createResponse = $this->jsonHttpResponse([
+            'id' => 'pred-voice',
+            'status' => 'starting',
+        ]);
+        $failedPollResponse = $this->jsonHttpResponse([
+            'id' => 'pred-voice',
+            'status' => 'failed',
+            'error' => 'Speech generation failed: voice id not exist',
+        ]);
+
+        $httpClient
+            ->expects($this->exactly(2))
+            ->method('request')
+            ->willReturnCallback(function (string $method, string $url) use ($createResponse, $failedPollResponse) {
+                if ($method === 'POST' && str_contains($url, '/predictions')) {
+                    return $createResponse;
+                }
+                if ($method === 'GET' && str_contains($url, '/predictions/pred-voice')) {
+                    return $failedPollResponse;
+                }
+
+                throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
+            });
+
+        $provider = $this->makeProvider($httpClient, new ReplicateVoiceProviderConfig(
+            enabled: true,
+            model: str_repeat('e', 64),
+            voiceId: 'NotARealVoice',
+            audioFormat: 'mp3',
+            pollIntervalSeconds: 0,
+            maxAttempts: 3,
+            maxPollDurationSeconds: 0,
+        ));
+
+        try {
+            $provider->generateVoice('Hi');
+            self::fail('Expected ReplicatePredictionFailedException');
+        } catch (ReplicatePredictionFailedException $e) {
+            self::assertStringContainsString('voice id not exist', $e->getMessage());
+            self::assertStringContainsString('TRAILER_VOICE_REPLICATE_VOICE_ID', $e->getMessage());
+            self::assertStringContainsString('NotARealVoice', $e->getMessage());
         }
     }
 
@@ -203,5 +319,17 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
         $replicate = new ReplicateClient($httpClient, $apiConfig);
 
         return new ReplicateVoiceGenerationProvider($replicate, $voiceConfig);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function jsonHttpResponse(array $data, int $statusCode = 200): ResponseInterface
+    {
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('getStatusCode')->willReturn($statusCode);
+        $response->method('getContent')->with(false)->willReturn(json_encode($data, JSON_THROW_ON_ERROR));
+
+        return $response;
     }
 }

@@ -59,15 +59,20 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
         $startPoll = $wallClockStart;
 
         $input = $this->videoInputMapper->buildInput($resolvedModel, $presetInput, $prompt, $options);
+        $version = $this->replicateClient->resolvePredictionVersion($resolvedModel);
         $initialPrediction = $this->replicateClient->createPrediction([
-            'version' => $resolvedModel,
+            'version' => $version,
             'input' => $input,
         ]);
 
         $predictionId = (string) ($initialPrediction['id'] ?? '');
 
         if ($predictionId === '') {
-            throw new \RuntimeException('Replicate video provider did not return a prediction id.');
+            $hint = $this->summarizePredictionBodyForMissingId($initialPrediction);
+            throw new \RuntimeException(
+                'Replicate video provider did not return a prediction id after a successful HTTP response.'
+                . ($hint !== null ? ' ' . $hint : '')
+            );
         }
 
         [$finalPrediction, $attempts] = $this->waitForPrediction(
@@ -260,5 +265,25 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
         $hash = substr(hash('xxh128', $prompt), 0, 16);
 
         return sys_get_temp_dir() . '/replicate_video_' . $hash . '.' . $ext;
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function summarizePredictionBodyForMissingId(array $body): ?string
+    {
+        if ($body === []) {
+            return 'Response body was empty or not JSON.';
+        }
+
+        foreach (['detail', 'message', 'title'] as $key) {
+            if (isset($body[$key]) && is_string($body[$key]) && $body[$key] !== '') {
+                return 'API payload: ' . $body[$key];
+            }
+        }
+
+        $json = json_encode($body);
+
+        return $json !== false ? 'Response JSON: ' . $json : null;
     }
 }

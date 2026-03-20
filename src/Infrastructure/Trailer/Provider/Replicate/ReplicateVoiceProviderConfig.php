@@ -11,8 +11,11 @@ final class ReplicateVoiceProviderConfig
 {
     public function __construct(
         public readonly bool $enabled,
-        /** Model/version slug for create-prediction (e.g. minimax/speech-2.6-turbo). */
+        /**
+         * Logical model slug (e.g. minimax/speech-2.6-turbo). Resolved to a version id via the Replicate models API when needed.
+         */
         public readonly string $model,
+        /** MiniMax voice catalogue id (e.g. Wise_Woman). Must not be a placeholder — validated in the provider. */
         public readonly string $voiceId,
         public readonly string $audioFormat,
         public readonly int $pollIntervalSeconds,

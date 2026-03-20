@@ -147,7 +147,7 @@ Override the model slug while keeping other options:
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=hailuo --replicate-model=minimax/hailuo-02-fast
 ```
 
-Programmatically, call `TrailerGenerationOrchestrator::generateFromYaml($path, ['replicate_preset' => 'seedance'])` or pass `replicate_model` / `replicate_input` in that same array (see `VideoGenerationProviderInterface` PHPDoc).
+Programmatically, call `TrailerGenerationOrchestrator::generateFromYaml($path, ['replicate_preset' => 'seedance'])` (or the `TrailerGenerationOrchestratorInterface` port) or pass `replicate_model` / `replicate_input` in that same array (see `VideoGenerationProviderInterface` PHPDoc).
 
 ### Winning model rollout
 

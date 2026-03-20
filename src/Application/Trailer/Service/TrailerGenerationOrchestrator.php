@@ -8,6 +8,7 @@ use App\Application\Trailer\DTO\SceneDefinition;
 use App\Application\Trailer\DTO\TrailerDefinition;
 use App\Application\Trailer\DTO\TrailerGenerationResult;
 use App\Application\Trailer\Port\TrailerDefinitionLoaderInterface;
+use App\Application\Trailer\Port\TrailerGenerationOrchestratorInterface;
 use App\Application\Trailer\Port\TrailerProjectRepositoryInterface;
 use App\Application\Trailer\Port\TrailerProjectSetupInterface;
 use App\Application\Trailer\Port\TrailerRendererInterface;
@@ -22,7 +23,7 @@ use App\Infrastructure\Trailer\Rendering\VideoBenchmarkReportWriter;
  * render when all scenes completed. Marks project status as draft → processing
  * → completed or failed; persists incrementally so the run is inspectable.
  */
-final class TrailerGenerationOrchestrator
+final class TrailerGenerationOrchestrator implements TrailerGenerationOrchestratorInterface
 {
     public function __construct(
         private readonly TrailerDefinitionLoaderInterface $definitionLoader,

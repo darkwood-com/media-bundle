@@ -22,36 +22,21 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
 
-        $createResponse = $this->createMock(ResponseInterface::class);
-        $pollResponse1 = $this->createMock(ResponseInterface::class);
-        $pollResponse2 = $this->createMock(ResponseInterface::class);
+        $createResponse = $this->jsonHttpResponse([
+            'id' => 'pred-123',
+            'status' => 'starting',
+        ]);
+        $pollResponse1 = $this->jsonHttpResponse([
+            'id' => 'pred-123',
+            'status' => 'processing',
+        ]);
+        $pollResponse2 = $this->jsonHttpResponse([
+            'id' => 'pred-123',
+            'status' => 'succeeded',
+            'output' => ['https://cdn.example.com/video.mp4'],
+            'metrics' => ['test_metric' => 1],
+        ]);
         $downloadResponse = $this->createMock(ResponseInterface::class);
-
-        $createResponse
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-123',
-                'status' => 'starting',
-            ]);
-
-        $pollResponse1
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-123',
-                'status' => 'processing',
-            ]);
-
-        $pollResponse2
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-123',
-                'status' => 'succeeded',
-                'output' => ['https://cdn.example.com/video.mp4'],
-                'metrics' => ['test_metric' => 1],
-            ]);
 
         $downloadResponse
             ->method('getStatusCode')
@@ -148,25 +133,15 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
 
-        $createResponse = $this->createMock(ResponseInterface::class);
-        $failedPollResponse = $this->createMock(ResponseInterface::class);
-
-        $createResponse
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-456',
-                'status' => 'starting',
-            ]);
-
-        $failedPollResponse
-            ->method('toArray')
-            ->with(false)
-            ->willReturn([
-                'id' => 'pred-456',
-                'status' => 'failed',
-                'error' => 'Something went wrong',
-            ]);
+        $createResponse = $this->jsonHttpResponse([
+            'id' => 'pred-456',
+            'status' => 'starting',
+        ]);
+        $failedPollResponse = $this->jsonHttpResponse([
+            'id' => 'pred-456',
+            'status' => 'failed',
+            'error' => 'Something went wrong',
+        ]);
 
         $httpClient
             ->expects($this->exactly(2))
@@ -206,31 +181,38 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
 
-        $createResponse = $this->createMock(ResponseInterface::class);
-        $pollResponse = $this->createMock(ResponseInterface::class);
-        $downloadResponse = $this->createMock(ResponseInterface::class);
-
-        $createResponse->method('toArray')->with(false)->willReturn(['id' => 'pred-789', 'status' => 'starting']);
-        $pollResponse->method('toArray')->with(false)->willReturn([
+        $resolvedVersionId = str_repeat('b', 64);
+        $modelMetaResponse = $this->jsonHttpResponse([
+            'owner' => 'custom',
+            'name' => 'override-model',
+            'latest_version' => ['id' => $resolvedVersionId],
+        ]);
+        $createResponse = $this->jsonHttpResponse(['id' => 'pred-789', 'status' => 'starting']);
+        $pollResponse = $this->jsonHttpResponse([
             'id' => 'pred-789',
             'status' => 'succeeded',
             'output' => 'https://cdn.example.com/v2.mp4',
         ]);
+        $downloadResponse = $this->createMock(ResponseInterface::class);
         $downloadResponse->method('getStatusCode')->willReturn(200);
         $downloadResponse->method('getContent')->with(false)->willReturn('X');
 
         $postJson = null;
         $pollCount = 0;
         $httpClient
-            ->expects($this->exactly(3))
+            ->expects($this->exactly(4))
             ->method('request')
             ->willReturnCallback(function (string $method, string $url, array $opts = []) use (
                 &$postJson,
                 &$pollCount,
+                $modelMetaResponse,
                 $createResponse,
                 $pollResponse,
                 $downloadResponse
             ) {
+                if ($method === 'GET' && str_contains($url, '/models/custom/override-model')) {
+                    return $modelMetaResponse;
+                }
                 if ($method === 'POST' && str_contains($url, '/predictions')) {
                     $postJson = $opts['json'] ?? null;
 
@@ -267,7 +249,7 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
                 'replicate_input' => ['resolution' => '720p'],
             ]);
 
-            self::assertSame('custom/override-model', $postJson['version']);
+            self::assertSame($resolvedVersionId, $postJson['version']);
             self::assertTrue($postJson['input']['draft']);
             self::assertSame('720p', $postJson['input']['resolution']);
             self::assertSame('Bench prompt', $postJson['input']['prompt']);
@@ -280,15 +262,112 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
         }
     }
 
+    public function test_create_prediction_http_error_surfaces_replicate_body_not_missing_id(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $errorResponse = $this->jsonHttpResponse(['detail' => 'Invalid version or input'], 422);
+
+        $httpClient
+            ->expects($this->once())
+            ->method('request')
+            ->willReturn($errorResponse);
+
+        $provider = $this->makeProvider($httpClient, new ReplicateVideoProviderConfig(
+            enabled: true,
+            model: 'bare-slug-no-slash',
+            defaultPreset: '',
+            pollIntervalSeconds: 0,
+            maxAttempts: 3,
+            maxPollDurationSeconds: 0,
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Invalid version or input');
+        $this->expectExceptionMessage('HTTP 422');
+
+        $provider->generateVideo('prompt');
+    }
+
+    public function test_owner_model_slug_resolves_via_models_api_and_prediction_id_in_metadata(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+
+        $resolvedVersion = str_repeat('1', 64);
+        $modelMeta = $this->jsonHttpResponse([
+            'owner' => 'minimax',
+            'name' => 'hailuo-02-fast',
+            'latest_version' => ['id' => $resolvedVersion],
+        ]);
+        $create = $this->jsonHttpResponse(['id' => 'pred-hailuo', 'status' => 'starting']);
+        $pollOk = $this->jsonHttpResponse([
+            'id' => 'pred-hailuo',
+            'status' => 'succeeded',
+            'output' => ['https://cdn.example.com/h.mp4'],
+        ]);
+        $download = $this->createMock(ResponseInterface::class);
+        $download->method('getStatusCode')->willReturn(200);
+        $download->method('getContent')->with(false)->willReturn('VID');
+
+        $postJson = null;
+        $httpClient
+            ->expects($this->exactly(4))
+            ->method('request')
+            ->willReturnCallback(function (string $method, string $url, array $opts = []) use (
+                &$postJson,
+                $modelMeta,
+                $create,
+                $pollOk,
+                $download,
+            ) {
+                if ($method === 'GET' && str_contains($url, '/models/minimax/hailuo-02-fast')) {
+                    return $modelMeta;
+                }
+                if ($method === 'POST' && str_contains($url, '/predictions')) {
+                    $postJson = $opts['json'] ?? null;
+
+                    return $create;
+                }
+                if ($method === 'GET' && str_contains($url, '/predictions/pred-hailuo')) {
+                    return $pollOk;
+                }
+                if ($method === 'GET' && $url === 'https://cdn.example.com/h.mp4') {
+                    return $download;
+                }
+
+                throw new \RuntimeException('Unexpected: ' . $method . ' ' . $url);
+            });
+
+        $provider = $this->makeProvider($httpClient, new ReplicateVideoProviderConfig(
+            enabled: true,
+            model: '',
+            defaultPreset: ReplicateVideoModelPresets::HAILUO,
+            pollIntervalSeconds: 0,
+            maxAttempts: 5,
+            maxPollDurationSeconds: 0,
+        ));
+
+        $targetPath = sys_get_temp_dir() . '/replicate_hailuo_' . uniqid('', true) . '.mp4';
+
+        try {
+            $result = $provider->generateVideo('forest mood', ['target_path' => $targetPath]);
+
+            self::assertSame($resolvedVersion, $postJson['version'] ?? null);
+            self::assertSame('pred-hailuo', $result->metadata['prediction_id'] ?? null);
+            self::assertSame('minimax/hailuo-02-fast', $result->metadata['model'] ?? null);
+            self::assertSame(ReplicateVideoModelPresets::HAILUO, $result->metadata['replicate_preset'] ?? null);
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
+    }
+
     public function test_poll_timeout_exceeded(): void
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
 
-        $createResponse = $this->createMock(ResponseInterface::class);
-        $processingResponse = $this->createMock(ResponseInterface::class);
-
-        $createResponse->method('toArray')->with(false)->willReturn(['id' => 'pred-slow', 'status' => 'starting']);
-        $processingResponse->method('toArray')->with(false)->willReturn([
+        $createResponse = $this->jsonHttpResponse(['id' => 'pred-slow', 'status' => 'starting']);
+        $processingResponse = $this->jsonHttpResponse([
             'id' => 'pred-slow',
             'status' => 'processing',
         ]);
@@ -334,5 +413,17 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             new ReplicateVideoInputMapper(),
             $videoConfig,
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function jsonHttpResponse(array $data, int $statusCode = 200): ResponseInterface
+    {
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('getStatusCode')->willReturn($statusCode);
+        $response->method('getContent')->with(false)->willReturn(json_encode($data, JSON_THROW_ON_ERROR));
+
+        return $response;
     }
 }

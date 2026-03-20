@@ -128,6 +128,7 @@ final class SceneAwareVoiceGenerationProviderTest extends TestCase
             self::assertSame('pred-v-fail', $result->metadata['real_attempt_prediction_id'] ?? null);
             self::assertSame('minimax/speech-x', $result->metadata['real_attempt_provider_model'] ?? null);
             self::assertSame('failed', $result->metadata['real_attempt_remote_status'] ?? null);
+            self::assertStringContainsString('bad text', (string) ($result->metadata['real_attempt_error_message'] ?? ''));
         } finally {
             if (is_file($targetPath)) {
                 @unlink($targetPath);

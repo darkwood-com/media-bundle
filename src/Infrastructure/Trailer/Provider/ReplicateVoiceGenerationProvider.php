@@ -51,14 +51,21 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
         $startPoll = $wallClockStart;
 
         $input = $this->buildInput($text, $options);
+        $this->assertVoiceIdIsConfigured((string) ($input['voice_id'] ?? ''));
+
+        $version = $this->replicateClient->resolvePredictionVersion($model);
         $initialPrediction = $this->replicateClient->createPrediction([
-            'version' => $model,
+            'version' => $version,
             'input' => $input,
         ]);
 
         $predictionId = (string) ($initialPrediction['id'] ?? '');
         if ($predictionId === '') {
-            throw new \RuntimeException('Replicate voice provider did not return a prediction id.');
+            $hint = $this->summarizePredictionBodyForMissingId($initialPrediction);
+            throw new \RuntimeException(
+                'Replicate voice provider did not return a prediction id after a successful HTTP response.'
+                . ($hint !== null ? ' ' . $hint : '')
+            );
         }
 
         [$finalPrediction, $attempts] = $this->waitForPrediction($predictionId, $startPoll, $model);
@@ -80,11 +87,16 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
         }
 
         if ($status !== 'succeeded') {
+            $remoteError = $finalPrediction['error'] ?? null;
+            $remoteError = $this->enrichRemoteErrorForVoiceMisconfiguration(
+                $remoteError,
+                (string) ($input['voice_id'] ?? '')
+            );
             throw ReplicatePredictionFailedException::terminalPredictionFailure(
                 $predictionId,
                 $model,
                 $status,
-                $finalPrediction['error'] ?? null,
+                $remoteError,
                 null,
             );
         }
@@ -108,6 +120,7 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
             'provider_status' => $status,
             'prediction_id' => $predictionId,
             'model' => $model,
+            'replicate_version' => $version,
             'remote_output_url' => $outputUrl,
             'poll_attempts' => $attempts,
             'started_at' => $startedAt->format(\DateTimeInterface::ATOM),
@@ -333,5 +346,87 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
         $hash = substr(hash('xxh128', $text), 0, 16);
 
         return sys_get_temp_dir() . '/replicate_voice_' . $hash . '.' . $ext;
+    }
+
+    /**
+     * MiniMax Speech on Replicate requires a real catalogue voice_id; placeholders break at runtime with opaque API errors.
+     */
+    private function assertVoiceIdIsConfigured(string $voiceId): void
+    {
+        if (trim($voiceId) === '') {
+            throw new \RuntimeException(
+                'Replicate voice provider: voice_id is empty. Set TRAILER_VOICE_REPLICATE_VOICE_ID (or pass voice_id in options) '
+                . 'to a valid MiniMax voice for minimax/speech-2.6-turbo — see the model’s API tab on Replicate (example: Wise_Woman).'
+            );
+        }
+
+        $lower = strtolower($voiceId);
+        $placeholderNeedles = [
+            'placeholder',
+            'your_voice',
+            'change_me',
+            'changeme',
+            'todo',
+            'example_voice',
+            'ton_voice',
+            'my_voice_id',
+            'set_me',
+            'fixme',
+        ];
+        foreach ($placeholderNeedles as $needle) {
+            if (str_contains($lower, $needle)) {
+                throw new \RuntimeException(sprintf(
+                    'Replicate voice provider: voice_id "%s" looks like a placeholder. '
+                    . 'Set TRAILER_VOICE_REPLICATE_VOICE_ID to a real MiniMax voice id from the Replicate model page (e.g. Wise_Woman).',
+                    $voiceId
+                ));
+            }
+        }
+
+        if (preg_match('/_id$/i', $voiceId) === 1 && !preg_match('/[a-z]/', $voiceId)) {
+            throw new \RuntimeException(sprintf(
+                'Replicate voice provider: voice_id "%s" looks like a template (all capitals with an _ID suffix). '
+                . 'Replace TRAILER_VOICE_REPLICATE_VOICE_ID with a valid MiniMax voice from Replicate (e.g. Wise_Woman).',
+                $voiceId
+            ));
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function summarizePredictionBodyForMissingId(array $body): ?string
+    {
+        if ($body === []) {
+            return 'Response body was empty or not JSON.';
+        }
+
+        foreach (['detail', 'message', 'title'] as $key) {
+            if (isset($body[$key]) && is_string($body[$key]) && $body[$key] !== '') {
+                return 'API payload: ' . $body[$key];
+            }
+        }
+
+        $json = json_encode($body);
+
+        return $json !== false ? 'Response JSON: ' . $json : null;
+    }
+
+    private function enrichRemoteErrorForVoiceMisconfiguration(mixed $remoteError, string $configuredVoiceId): mixed
+    {
+        $asString = is_string($remoteError) ? $remoteError : (is_scalar($remoteError) ? (string) $remoteError : null);
+        if ($asString === null || $asString === '') {
+            return $remoteError;
+        }
+
+        if (!preg_match('/voice\s*id|voice_id|invalid\s*voice|not\s*exist/i', $asString)) {
+            return $remoteError;
+        }
+
+        return sprintf(
+            '%s — Check TRAILER_VOICE_REPLICATE_VOICE_ID (currently "%s") matches a MiniMax voice id from the minimax/speech-2.6-turbo model on Replicate.',
+            $asString,
+            $configuredVoiceId
+        );
     }
 }
