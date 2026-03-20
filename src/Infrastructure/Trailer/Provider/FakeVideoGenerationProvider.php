@@ -6,6 +6,7 @@ namespace App\Infrastructure\Trailer\Provider;
 
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VideoGenerationProviderInterface;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 
 final class FakeVideoGenerationProvider implements VideoGenerationProviderInterface
 {
@@ -13,9 +14,11 @@ final class FakeVideoGenerationProvider implements VideoGenerationProviderInterf
 
     public function generateVideo(string $prompt, array $options = []): GeneratedAssetResult
     {
+        $wallStart = microtime(true);
         $targetPath = $options['target_path'] ?? $this->defaultPath($prompt, 'mp4');
         $sceneId = $options['scene_id'] ?? null;
-        $timestamp = (new \DateTimeImmutable('now'))->format(\DateTimeInterface::ATOM);
+        $startedAt = new \DateTimeImmutable('now');
+        $timestamp = $startedAt->format(\DateTimeInterface::ATOM);
 
         $dir = \dirname($targetPath);
         if (!is_dir($dir)) {
@@ -25,12 +28,33 @@ final class FakeVideoGenerationProvider implements VideoGenerationProviderInterf
         $content = $this->minimalMp4();
         file_put_contents($targetPath, $content);
 
+        $completedAt = new \DateTimeImmutable('now');
+
+        $modelLabel = 'fake-video';
+        if (isset($options['replicate_model']) && is_string($options['replicate_model']) && $options['replicate_model'] !== '') {
+            $modelLabel = $options['replicate_model'];
+        } elseif (isset($options['replicate_preset']) && is_string($options['replicate_preset']) && $options['replicate_preset'] !== '') {
+            try {
+                $modelLabel = ReplicateVideoModelPresets::resolve($options['replicate_preset'])['model'];
+            } catch (\InvalidArgumentException) {
+                $modelLabel = $options['replicate_preset'];
+            }
+        }
+
         $metadata = [
             'provider' => self::PROVIDER_NAME,
             'generated_at' => $timestamp,
+            'started_at' => $startedAt->format(\DateTimeInterface::ATOM),
+            'completed_at' => $completedAt->format(\DateTimeInterface::ATOM),
+            'generation_time_seconds' => round(microtime(true) - $wallStart, 3),
             'scene_id' => $sceneId,
             'prompt' => $prompt,
+            'model' => $modelLabel,
         ];
+
+        if (isset($options['replicate_preset']) && is_string($options['replicate_preset']) && $options['replicate_preset'] !== '') {
+            $metadata['replicate_preset'] = $options['replicate_preset'];
+        }
 
         return new GeneratedAssetResult(
             path: $targetPath,

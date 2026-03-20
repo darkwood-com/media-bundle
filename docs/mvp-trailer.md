@@ -70,6 +70,13 @@ php bin/console app:trailer:generate examples/trailer.yaml --video-benchmark
 
 Each clip is stored as `video--hailuo-02-fast.mp4`, `video--seedance-1-lite.mp4`, `video--p-video-draft.mp4` (see `video_artifact_file` / `model` / `replicate_preset` on each video asset in `project.json`).
 
+When scene 1 has **multiple** video outputs (benchmark or comma-separated `--video-preset`), the run also writes comparison artifacts next to the manifest:
+
+- `var/trailers/<project-id>/render/video-benchmark-report.json` — structured rows (preset, model name, local path, prompt, wall-clock generation time, Replicate `metrics.predict_time` when present, optional cost fields from the API if exposed).
+- `var/trailers/<project-id>/render/video-benchmark-report.md` — the same content as a Markdown table for quick diffing in an editor.
+
+The generate command prints those paths and a **CLI summary table** when the report exists.
+
 Presets map to:
 
 | Preset            | Replicate model              | Notes                          |

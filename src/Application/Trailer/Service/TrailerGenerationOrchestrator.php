@@ -14,6 +14,7 @@ use App\Application\Trailer\Port\TrailerRendererInterface;
 use App\Domain\Trailer\Enum\SceneStatus;
 use App\Domain\Trailer\Scene;
 use App\Domain\Trailer\TrailerProject;
+use App\Infrastructure\Trailer\Rendering\VideoBenchmarkReportWriter;
 
 /**
  * Orchestrates trailer generation from a YAML definition: load, create project,
@@ -29,6 +30,7 @@ final class TrailerGenerationOrchestrator
         private readonly TrailerProjectSetupInterface $projectSetup,
         private readonly SceneGenerationService $sceneGenerationService,
         private readonly TrailerRendererInterface $renderer,
+        private readonly VideoBenchmarkReportWriter $benchmarkReportWriter,
     ) {
     }
 
@@ -106,6 +108,8 @@ final class TrailerGenerationOrchestrator
         }
         $this->projectRepository->save($project);
 
+        $benchmarkReportPaths = $this->benchmarkReportWriter->writeIfApplicable($project);
+
         $renderOutputPath = null;
         if ($project->status()->value === 'completed') {
             $renderOutputPath = $this->renderer->render(
@@ -115,7 +119,7 @@ final class TrailerGenerationOrchestrator
             $this->projectRepository->save($project);
         }
 
-        return new TrailerGenerationResult($project, $renderOutputPath);
+        return new TrailerGenerationResult($project, $renderOutputPath, $benchmarkReportPaths);
     }
 
     private function createProjectId(string $yamlPath): string

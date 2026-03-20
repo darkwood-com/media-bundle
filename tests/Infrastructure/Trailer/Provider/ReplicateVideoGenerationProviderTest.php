@@ -129,6 +129,8 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             self::assertSame(2, $result->metadata['poll_attempts'] ?? null);
             self::assertArrayHasKey('started_at', $result->metadata);
             self::assertArrayHasKey('completed_at', $result->metadata);
+            self::assertIsFloat($result->metadata['generation_time_seconds'] ?? null);
+            self::assertGreaterThanOrEqual(0.0, $result->metadata['generation_time_seconds']);
 
             self::assertIsArray($postJson);
             self::assertSame('test-model', $postJson['version']);

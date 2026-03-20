@@ -53,8 +53,9 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
         $targetPath = $options['target_path'] ?? $this->defaultPath($prompt, 'mp4');
         $sceneId = $options['scene_id'] ?? null;
 
+        $wallClockStart = microtime(true);
         $startedAt = new \DateTimeImmutable('now');
-        $startPoll = microtime(true);
+        $startPoll = $wallClockStart;
 
         $input = $this->videoInputMapper->buildInput($resolvedModel, $presetInput, $prompt, $options);
         $initialPrediction = $this->replicateClient->createPrediction([
@@ -115,6 +116,7 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             'poll_attempts' => $attempts,
             'started_at' => $startedAt->format(\DateTimeInterface::ATOM),
             'completed_at' => $completedAt->format(\DateTimeInterface::ATOM),
+            'generation_time_seconds' => round(microtime(true) - $wallClockStart, 3),
             'scene_id' => $sceneId,
             'prompt' => $prompt,
         ];

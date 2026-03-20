@@ -152,33 +152,77 @@ final class GenerateTrailerCliCommand extends Command
                 $io->writeln('');
                 $io->section('Scene 1 video' . (count($videoAssets) > 1 ? 's' : ''));
 
-                foreach ($videoAssets as $i => $videoAsset) {
-                    if ($i > 0) {
-                        $io->writeln('');
+                $benchmarkPaths = $result->benchmarkReportPaths;
+                if ($benchmarkPaths !== null) {
+                    $io->writeln(sprintf('Benchmark report (JSON): %s', $benchmarkPaths['json']));
+                    $io->writeln(sprintf('Benchmark report (Markdown): %s', $benchmarkPaths['markdown']));
+                    $io->writeln('');
+                    $jsonRaw = @file_get_contents($benchmarkPaths['json']);
+                    if (is_string($jsonRaw) && $jsonRaw !== '') {
+                        try {
+                            /** @var array<string, mixed> $report */
+                            $report = json_decode($jsonRaw, true, 512, \JSON_THROW_ON_ERROR);
+                            $modelRows = $report['models'] ?? [];
+                            if (is_array($modelRows) && $modelRows !== []) {
+                                $table = [];
+                                foreach ($modelRows as $row) {
+                                    if (!is_array($row)) {
+                                        continue;
+                                    }
+                                    $wall = $row['generation_time_seconds'];
+                                    $pred = $row['replicate_predict_time_seconds'];
+                                    $cost = $row['cost_estimate_usd'];
+                                    $table[] = [
+                                        (string) ($row['preset_key'] ?? '—'),
+                                        (string) ($row['model_name'] ?? ''),
+                                        $wall !== null ? (string) $wall : '—',
+                                        $pred !== null ? (string) $pred : '—',
+                                        $cost !== null ? (string) $cost : '—',
+                                        basename((string) ($row['local_file_path'] ?? '')),
+                                        (string) ($row['asset_status'] ?? ''),
+                                    ];
+                                }
+                                $io->table(
+                                    ['Preset', 'Model', 'Wall (s)', 'Predict (s)', 'Cost (USD)', 'File', 'Status'],
+                                    $table,
+                                );
+                            }
+                        } catch (\JsonException) {
+                            $io->warning('Could not parse benchmark JSON for CLI summary.');
+                        }
                     }
-                    $metadata = $videoAsset->metadata();
-                    $provider = $metadata['provider'] ?? $videoAsset->provider() ?? 'unknown';
-                    $fallbackFrom = $metadata['fallback_from'] ?? null;
+                    $io->writeln('');
+                }
 
-                    $io->writeln(sprintf('Asset %s', $videoAsset->id()));
-                    $file = $metadata['video_artifact_file'] ?? ($videoAsset->path() !== null ? basename($videoAsset->path()) : null);
-                    if (is_string($file) && $file !== '') {
-                        $io->writeln(sprintf('File: %s', $file));
-                    }
-                    $io->writeln(sprintf('Provider: %s', $provider));
+                if ($benchmarkPaths === null) {
+                    foreach ($videoAssets as $i => $videoAsset) {
+                        if ($i > 0) {
+                            $io->writeln('');
+                        }
+                        $metadata = $videoAsset->metadata();
+                        $provider = $metadata['provider'] ?? $videoAsset->provider() ?? 'unknown';
+                        $fallbackFrom = $metadata['fallback_from'] ?? null;
 
-                    $model = $metadata['model'] ?? null;
-                    if (is_string($model) && $model !== '') {
-                        $io->writeln(sprintf('Replicate model: %s', $model));
-                    }
+                        $io->writeln(sprintf('Asset %s', $videoAsset->id()));
+                        $file = $metadata['video_artifact_file'] ?? ($videoAsset->path() !== null ? basename($videoAsset->path()) : null);
+                        if (is_string($file) && $file !== '') {
+                            $io->writeln(sprintf('File: %s', $file));
+                        }
+                        $io->writeln(sprintf('Provider: %s', $provider));
 
-                    $preset = $metadata['replicate_preset'] ?? null;
-                    if (is_string($preset) && $preset !== '') {
-                        $io->writeln(sprintf('Video preset: %s', $preset));
-                    }
+                        $model = $metadata['model'] ?? null;
+                        if (is_string($model) && $model !== '') {
+                            $io->writeln(sprintf('Replicate model: %s', $model));
+                        }
 
-                    if ($fallbackFrom !== null) {
-                        $io->writeln(sprintf('Used fallback from: %s', $fallbackFrom));
+                        $preset = $metadata['replicate_preset'] ?? null;
+                        if (is_string($preset) && $preset !== '') {
+                            $io->writeln(sprintf('Video preset: %s', $preset));
+                        }
+
+                        if ($fallbackFrom !== null) {
+                            $io->writeln(sprintf('Used fallback from: %s', $fallbackFrom));
+                        }
                     }
                 }
 
