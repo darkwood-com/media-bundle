@@ -9,7 +9,9 @@ use App\Domain\Trailer\Enum\AssetType;
 use App\Domain\Trailer\Enum\ProjectStatus;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -36,6 +38,23 @@ final class GenerateTrailerCliCommand extends Command
             InputArgument::REQUIRED,
             'Path to the trailer definition YAML file',
         );
+
+        $this->addOption(
+            'video-preset',
+            null,
+            InputOption::VALUE_REQUIRED,
+            sprintf(
+                'Replicate benchmark preset for scene 1 only (%s)',
+                implode(', ', ReplicateVideoModelPresets::presetKeys())
+            ),
+        );
+
+        $this->addOption(
+            'replicate-model',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'Override Replicate model (slug or version id) for scene 1 video',
+        );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -55,8 +74,10 @@ final class GenerateTrailerCliCommand extends Command
         $io->section('Generating trailer');
         $io->text('Loading definition and running pipeline…');
 
+        $firstSceneVideoOptions = $this->buildFirstSceneVideoOptions($input);
+
         try {
-            $result = $this->orchestrator->generateFromYaml($yamlPath);
+            $result = $this->orchestrator->generateFromYaml($yamlPath, $firstSceneVideoOptions);
         } catch (\Throwable $e) {
             $io->error($e->getMessage());
             return Command::FAILURE;
@@ -95,6 +116,16 @@ final class GenerateTrailerCliCommand extends Command
                 $io->section('Scene 1 video provider');
                 $io->writeln(sprintf('Provider: %s', $provider));
 
+                $model = $metadata['model'] ?? null;
+                if (is_string($model) && $model !== '') {
+                    $io->writeln(sprintf('Replicate model: %s', $model));
+                }
+
+                $preset = $metadata['replicate_preset'] ?? null;
+                if (is_string($preset) && $preset !== '') {
+                    $io->writeln(sprintf('Video preset: %s', $preset));
+                }
+
                 if ($fallbackFrom !== null) {
                     $io->writeln(sprintf('Used fallback from: %s', $fallbackFrom));
                 }
@@ -113,5 +144,35 @@ final class GenerateTrailerCliCommand extends Command
         return $project->status() === ProjectStatus::Completed
             ? Command::SUCCESS
             : Command::FAILURE;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildFirstSceneVideoOptions(InputInterface $input): ?array
+    {
+        $preset = $input->getOption('video-preset');
+        $model = $input->getOption('replicate-model');
+
+        if (!is_string($preset) || $preset === '') {
+            $preset = null;
+        }
+        if (!is_string($model) || $model === '') {
+            $model = null;
+        }
+
+        if ($preset === null && $model === null) {
+            return null;
+        }
+
+        $opts = [];
+        if ($preset !== null) {
+            $opts['replicate_preset'] = $preset;
+        }
+        if ($model !== null) {
+            $opts['replicate_model'] = $model;
+        }
+
+        return $opts;
     }
 }

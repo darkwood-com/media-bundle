@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Infrastructure\Trailer\Provider;
 
 use App\Application\Trailer\DTO\GeneratedAssetResult;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig;
 use App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider;
 use PHPUnit\Framework\TestCase;
@@ -57,21 +58,35 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             ->with(false)
             ->willReturn('FAKE-VIDEO-DATA');
 
+        $postJson = null;
+        $pollCount = 0;
         $httpClient
             ->expects($this->exactly(4))
             ->method('request')
-            ->withConsecutive(
-                ['POST', $this->stringContains('/predictions'), $this->isType('array')],
-                ['GET', $this->stringContains('/predictions/pred-123'), $this->isType('array')],
-                ['GET', $this->stringContains('/predictions/pred-123'), $this->isType('array')],
-                ['GET', 'https://cdn.example.com/video.mp4', $this->anything()]
-            )
-            ->willReturnOnConsecutiveCalls(
+            ->willReturnCallback(function (string $method, string $url, array $opts = []) use (
+                &$postJson,
+                &$pollCount,
                 $createResponse,
                 $pollResponse1,
                 $pollResponse2,
                 $downloadResponse
-            );
+            ) {
+                if ($method === 'POST' && str_contains($url, '/predictions')) {
+                    $postJson = $opts['json'] ?? null;
+
+                    return $createResponse;
+                }
+                if ($method === 'GET' && str_contains($url, '/predictions/pred-123')) {
+                    ++$pollCount;
+
+                    return $pollCount === 1 ? $pollResponse1 : $pollResponse2;
+                }
+                if ($method === 'GET' && $url === 'https://cdn.example.com/video.mp4') {
+                    return $downloadResponse;
+                }
+
+                throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
+            });
 
         $config = new ReplicateVideoProviderConfig(
             enabled: true,
@@ -111,6 +126,11 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             self::assertSame(2, $result->metadata['poll_attempts'] ?? null);
             self::assertArrayHasKey('started_at', $result->metadata);
             self::assertArrayHasKey('completed_at', $result->metadata);
+
+            self::assertIsArray($postJson);
+            self::assertSame('test-model', $postJson['version']);
+            self::assertSame('A mysterious forest', $postJson['input']['prompt']);
+            self::assertSame(8, $postJson['input']['duration']);
         } finally {
             if (is_file($targetPath)) {
                 @unlink($targetPath);
@@ -145,14 +165,16 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
         $httpClient
             ->expects($this->exactly(2))
             ->method('request')
-            ->withConsecutive(
-                ['POST', $this->stringContains('/predictions'), $this->isType('array')],
-                ['GET', $this->stringContains('/predictions/pred-456'), $this->isType('array')]
-            )
-            ->willReturnOnConsecutiveCalls(
-                $createResponse,
-                $failedPollResponse
-            );
+            ->willReturnCallback(function (string $method, string $url) use ($createResponse, $failedPollResponse) {
+                if ($method === 'POST' && str_contains($url, '/predictions')) {
+                    return $createResponse;
+                }
+                if ($method === 'GET' && str_contains($url, '/predictions/pred-456')) {
+                    return $failedPollResponse;
+                }
+
+                throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
+            });
 
         $config = new ReplicateVideoProviderConfig(
             enabled: true,
@@ -168,6 +190,85 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
         $this->expectExceptionMessage('Replicate prediction pred-456 failed with status "failed": Something went wrong');
 
         $provider->generateVideo('A failing prediction');
+    }
+
+    public function test_generate_video_preset_and_replicate_input_shape(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+
+        $createResponse = $this->createMock(ResponseInterface::class);
+        $pollResponse = $this->createMock(ResponseInterface::class);
+        $downloadResponse = $this->createMock(ResponseInterface::class);
+
+        $createResponse->method('toArray')->with(false)->willReturn(['id' => 'pred-789', 'status' => 'starting']);
+        $pollResponse->method('toArray')->with(false)->willReturn([
+            'id' => 'pred-789',
+            'status' => 'succeeded',
+            'output' => 'https://cdn.example.com/v2.mp4',
+        ]);
+        $downloadResponse->method('getStatusCode')->willReturn(200);
+        $downloadResponse->method('getContent')->with(false)->willReturn('X');
+
+        $postJson = null;
+        $pollCount = 0;
+        $httpClient
+            ->expects($this->exactly(3))
+            ->method('request')
+            ->willReturnCallback(function (string $method, string $url, array $opts = []) use (
+                &$postJson,
+                &$pollCount,
+                $createResponse,
+                $pollResponse,
+                $downloadResponse
+            ) {
+                if ($method === 'POST' && str_contains($url, '/predictions')) {
+                    $postJson = $opts['json'] ?? null;
+
+                    return $createResponse;
+                }
+                if ($method === 'GET' && str_contains($url, '/predictions/pred-789')) {
+                    ++$pollCount;
+
+                    return $pollResponse;
+                }
+                if ($method === 'GET' && $url === 'https://cdn.example.com/v2.mp4') {
+                    return $downloadResponse;
+                }
+
+                throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
+            });
+
+        $config = new ReplicateVideoProviderConfig(
+            enabled: true,
+            apiToken: 't',
+            model: 'fallback/from-config',
+            pollIntervalSeconds: 0,
+            maxAttempts: 5,
+        );
+
+        $provider = new ReplicateVideoGenerationProvider($httpClient, $config);
+
+        $targetPath = sys_get_temp_dir() . '/replicate_preset_test_' . uniqid('', true) . '.mp4';
+
+        try {
+            $result = $provider->generateVideo('Bench prompt', [
+                'target_path' => $targetPath,
+                'replicate_preset' => ReplicateVideoModelPresets::P_VIDEO_DRAFT,
+                'replicate_model' => 'custom/override-model',
+                'replicate_input' => ['resolution' => '720p'],
+            ]);
+
+            self::assertSame('custom/override-model', $postJson['version']);
+            self::assertTrue($postJson['input']['draft']);
+            self::assertSame('720p', $postJson['input']['resolution']);
+            self::assertSame('Bench prompt', $postJson['input']['prompt']);
+            self::assertSame('custom/override-model', $result->metadata['model']);
+            self::assertSame(ReplicateVideoModelPresets::P_VIDEO_DRAFT, $result->metadata['replicate_preset']);
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
     }
 }
 

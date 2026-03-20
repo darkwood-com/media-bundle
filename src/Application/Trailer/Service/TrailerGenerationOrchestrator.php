@@ -39,7 +39,10 @@ final class TrailerGenerationOrchestrator
      *
      * @throws \App\Application\Trailer\Exception\InvalidTrailerDefinitionException
      */
-    public function generateFromYaml(string $yamlPath): TrailerGenerationResult
+    /**
+     * @param array<string, mixed>|null $firstSceneVideoOptions Passed to the video provider for scene 1 only (e.g. replicate_preset)
+     */
+    public function generateFromYaml(string $yamlPath, ?array $firstSceneVideoOptions = null): TrailerGenerationResult
     {
         $definition = $this->definitionLoader->load($yamlPath);
         $projectId = $this->createProjectId($yamlPath);
@@ -58,7 +61,8 @@ final class TrailerGenerationOrchestrator
         foreach ($project->scenes() as $index => $scene) {
             $sceneDef = $sceneDefinitions[$index] ?? null;
             if ($sceneDef instanceof SceneDefinition) {
-                $this->sceneGenerationService->generateScene($projectId, $scene, $sceneDef);
+                $videoOpts = ($index === 0 && $firstSceneVideoOptions !== null) ? $firstSceneVideoOptions : [];
+                $this->sceneGenerationService->generateScene($projectId, $scene, $sceneDef, $videoOpts);
             }
             $this->projectRepository->save($project);
 

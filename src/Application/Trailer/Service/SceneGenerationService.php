@@ -30,7 +30,10 @@ final class SceneGenerationService
      * Generate voice and video assets for the scene end-to-end.
      * Updates scene and asset status in place; on failure marks scene failed and preserves error message.
      */
-    public function generateScene(string $projectId, Scene $scene, SceneDefinition $definition): void
+    /**
+     * @param array<string, mixed> $videoProviderOptions Merged into the video provider call (e.g. replicate_preset)
+     */
+    public function generateScene(string $projectId, Scene $scene, SceneDefinition $definition, array $videoProviderOptions = []): void
     {
         $scene->markProcessing();
         $this->artifactStorage->ensureSceneDirectory($projectId, $scene);
@@ -50,7 +53,7 @@ final class SceneGenerationService
         }
 
         if ($definition->videoPrompt !== '') {
-            if (!$this->generateVideo($scene, $videoAsset, $definition->videoPrompt, $videoPath)) {
+            if (!$this->generateVideo($scene, $videoAsset, $definition->videoPrompt, $videoPath, $videoProviderOptions)) {
                 return;
             }
         } else {
@@ -107,16 +110,19 @@ final class SceneGenerationService
         }
     }
 
-    private function generateVideo(Scene $scene, Asset $asset, string $prompt, string $targetPath): bool
+    /**
+     * @param array<string, mixed> $extraOptions
+     */
+    private function generateVideo(Scene $scene, Asset $asset, string $prompt, string $targetPath, array $extraOptions = []): bool
     {
         $asset->markProcessing(null);
 
         try {
-            $result = $this->videoProvider->generateVideo($prompt, [
+            $result = $this->videoProvider->generateVideo($prompt, array_merge([
                 'target_path' => $targetPath,
                 'scene_id' => $scene->id(),
                 'scene_number' => $scene->number(),
-            ]);
+            ], $extraOptions));
             $metadata = $this->normalizeAssetMetadata($result->metadata, $result->path);
             $asset->complete($result->path, $metadata);
             if ($result->duration !== null && $scene->duration() === null) {

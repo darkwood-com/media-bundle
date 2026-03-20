@@ -12,6 +12,13 @@ interface VideoGenerationProviderInterface
      * Generate a video from a text prompt.
      * Returns the path to the generated file (local or storage key).
      *
+     * Common options: target_path, scene_id, scene_number, duration, seed.
+     *
+     * Replicate (real provider) also accepts:
+     *  - replicate_preset: benchmark key (hailuo, seedance, p_video_draft)
+     *  - replicate_model: model slug or version id (overrides preset / default config)
+     *  - replicate_input: array merged into the API input object after preset defaults
+     *
      * @param array<string, mixed> $options Optional provider-specific options (e.g. resolution, duration)
      */
     public function generateVideo(string $prompt, array $options = []): GeneratedAssetResult;

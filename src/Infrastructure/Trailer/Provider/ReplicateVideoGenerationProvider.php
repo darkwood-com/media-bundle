@@ -6,6 +6,7 @@ namespace App\Infrastructure\Trailer\Provider;
 
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VideoGenerationProviderInterface;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -39,8 +40,15 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             throw new \RuntimeException('Replicate video provider is disabled by configuration.');
         }
 
-        if ($this->config->apiToken === '' || $this->config->model === '') {
-            throw new \RuntimeException('Replicate video provider is misconfigured (missing API token or model identifier).');
+        if ($this->config->apiToken === '') {
+            throw new \RuntimeException('Replicate video provider is misconfigured (missing API token).');
+        }
+
+        $resolvedModel = $this->resolveModelIdentifier($options);
+        if ($resolvedModel === '') {
+            throw new \RuntimeException(
+                'Replicate video provider: set TRAILER_VIDEO_REPLICATE_MODEL, or pass replicate_preset / replicate_model in options.'
+            );
         }
 
         $targetPath = $options['target_path'] ?? $this->defaultPath($prompt, 'mp4');
@@ -48,7 +56,7 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
 
         $startedAt = new \DateTimeImmutable('now');
 
-        $initialPrediction = $this->createPrediction($prompt, $options);
+        $initialPrediction = $this->createPrediction($prompt, $options, $resolvedModel);
         $predictionId = (string) ($initialPrediction['id'] ?? '');
 
         if ($predictionId === '') {
@@ -96,7 +104,10 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             'provider' => self::PROVIDER_NAME,
             'provider_status' => $status,
             'prediction_id' => $predictionId,
-            'model' => $this->config->model,
+            'model' => $resolvedModel,
+            'replicate_preset' => isset($options['replicate_preset']) && is_string($options['replicate_preset'])
+                ? $options['replicate_preset']
+                : null,
             'remote_output_url' => $outputUrl,
             'poll_attempts' => $attempts,
             'started_at' => $startedAt->format(\DateTimeInterface::ATOM),
@@ -121,22 +132,12 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
      *
      * @return array<string, mixed>
      */
-    private function createPrediction(string $prompt, array $options): array
+    private function createPrediction(string $prompt, array $options, string $modelVersion): array
     {
-        $input = [
-            'prompt' => $prompt,
-        ];
-
-        if (isset($options['duration'])) {
-            $input['duration'] = (int) $options['duration'];
-        }
-
-        if (isset($options['seed'])) {
-            $input['seed'] = $options['seed'];
-        }
+        $input = $this->buildReplicateInput($prompt, $options);
 
         $body = [
-            'version' => $this->config->model,
+            'version' => $modelVersion,
             'input' => $input,
         ];
 
@@ -152,6 +153,60 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
         $data = $response->toArray(false);
 
         return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function resolveModelIdentifier(array $options): string
+    {
+        $model = $this->config->model;
+
+        $presetKey = $options['replicate_preset'] ?? null;
+        if (is_string($presetKey) && $presetKey !== '') {
+            $resolved = ReplicateVideoModelPresets::resolve($presetKey);
+            $model = $resolved['model'];
+        }
+
+        $override = $options['replicate_model'] ?? null;
+        if (is_string($override) && $override !== '') {
+            $model = $override;
+        }
+
+        return $model;
+    }
+
+    /**
+     * Preset defaults, then replicate_input, then prompt / duration / seed from options.
+     *
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    private function buildReplicateInput(string $prompt, array $options): array
+    {
+        $input = [];
+
+        $presetKey = $options['replicate_preset'] ?? null;
+        if (is_string($presetKey) && $presetKey !== '') {
+            $input = ReplicateVideoModelPresets::resolve($presetKey)['input'];
+        }
+
+        if (isset($options['replicate_input']) && is_array($options['replicate_input'])) {
+            $input = array_merge($input, $options['replicate_input']);
+        }
+
+        $input['prompt'] = $prompt;
+
+        if (isset($options['duration'])) {
+            $input['duration'] = (int) $options['duration'];
+        }
+
+        if (isset($options['seed'])) {
+            $input['seed'] = $options['seed'];
+        }
+
+        return $input;
     }
 
     /**
