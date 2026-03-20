@@ -50,6 +50,16 @@ final class GenerateTrailerCliCommand extends Command
         );
 
         $this->addOption(
+            'video-benchmark',
+            null,
+            InputOption::VALUE_NONE,
+            sprintf(
+                'Scene 1 only: run all video benchmark presets (%s) in one project; voice skipped for scene 1',
+                implode(', ', ReplicateVideoModelPresets::presetKeys())
+            ),
+        );
+
+        $this->addOption(
             'replicate-model',
             null,
             InputOption::VALUE_REQUIRED,
@@ -164,6 +174,7 @@ final class GenerateTrailerCliCommand extends Command
     {
         $presetRaw = $input->getOption('video-preset');
         $model = $input->getOption('replicate-model');
+        $videoBenchmark = (bool) $input->getOption('video-benchmark');
 
         if (!is_string($model) || $model === '') {
             $model = null;
@@ -175,6 +186,10 @@ final class GenerateTrailerCliCommand extends Command
                 array_map(trim(...), explode(',', $presetRaw)),
                 static fn (string $s): bool => $s !== '',
             ));
+        }
+
+        if ($presetList === [] && $videoBenchmark) {
+            $presetList = ReplicateVideoModelPresets::presetKeys();
         }
 
         if ($presetList === [] && $model === null) {

@@ -35,7 +35,7 @@ To verify that Replicate was used, run the generate command and look for the **"
 
 ### Scene 1 benchmark presets (multiple Replicate video models)
 
-For quick A/B runs without changing `.env` each time, pass **scene 1 only** options on the CLI:
+For quick A/B runs without changing `.env` each time, pass **scene 1 only** options on the CLI. **Benchmark runs skip voice (TTS) for scene 1** so you only pay for video API calls; other scenes still get voice + video as usual.
 
 ```bash
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=hailuo
@@ -43,10 +43,16 @@ php bin/console app:trailer:generate examples/trailer.yaml --video-preset=seedan
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=p_video_draft
 ```
 
-In **one project**, run all three presets (one voice pass, three video files under scene 1):
+In **one project**, run all three presets (three video files under scene 1, same prompt):
 
 ```bash
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=hailuo,seedance,p_video_draft
+```
+
+Shortcut (equivalent preset list: `hailuo`, `seedance`, `p_video_draft`):
+
+```bash
+php bin/console app:trailer:generate examples/trailer.yaml --video-benchmark
 ```
 
 Each clip is stored as `video--hailuo-02-fast.mp4`, `video--seedance-1-lite.mp4`, `video--p-video-draft.mp4` (see `video_artifact_file` / `model` / `replicate_preset` on each video asset in `project.json`).

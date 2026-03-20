@@ -23,6 +23,7 @@ final class SceneGenerationService
         private readonly VoiceGenerationProviderInterface $voiceProvider,
         private readonly VideoGenerationProviderInterface $videoProvider,
         private readonly ArtifactStorageInterface $artifactStorage,
+        private readonly SceneVideoBenchmarkService $sceneVideoBenchmarkService,
     ) {
     }
 
@@ -64,7 +65,7 @@ final class SceneGenerationService
     }
 
     /**
-     * Scene 1 benchmark: one voice pass, then one video file + video asset per preset.
+     * Scene 1 benchmark: voice skipped (no TTS); one video file + video asset per preset, same prompt.
      *
      * @param list<string>           $presetKeys
      * @param array<string, mixed>   $baseVideoOptions merged before each replicate_preset (e.g. replicate_model)
@@ -81,14 +82,7 @@ final class SceneGenerationService
 
         $voicePath = $this->artifactStorage->getSceneVoiceOutputPath($projectId, $scene);
         $voiceAsset = $this->findOrCreateAsset($scene, AssetType::Voice);
-
-        if ($definition->narration !== '') {
-            if (!$this->generateVoice($scene, $voiceAsset, $definition->narration, $voicePath)) {
-                return;
-            }
-        } else {
-            $voiceAsset->complete($voicePath, ['skipped' => true, 'reason' => 'empty narration']);
-        }
+        $voiceAsset->complete($voicePath, ['skipped' => true, 'reason' => 'video_benchmark_mode']);
 
         if ($definition->videoPrompt === '') {
             $videoPath = $this->artifactStorage->getSceneVideoOutputPath($projectId, $scene, []);
@@ -99,16 +93,15 @@ final class SceneGenerationService
             return;
         }
 
-        foreach ($presetKeys as $presetKey) {
-            $opts = array_merge($baseVideoOptions, ['replicate_preset' => $presetKey]);
-            $videoPath = $this->artifactStorage->getSceneVideoOutputPath($projectId, $scene, $opts);
-            $videoAsset = $this->findOrCreateVideoAsset($scene, $opts);
-            if (!$this->generateVideo($scene, $videoAsset, $definition->videoPrompt, $videoPath, $opts)) {
-                return;
-            }
+        if ($this->sceneVideoBenchmarkService->generateVideosForPresets(
+            $projectId,
+            $scene,
+            $definition->videoPrompt,
+            $presetKeys,
+            $baseVideoOptions,
+        )) {
+            $scene->complete();
         }
-
-        $scene->complete();
     }
 
     private function findOrCreateAsset(Scene $scene, AssetType $type): Asset

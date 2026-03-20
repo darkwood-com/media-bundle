@@ -41,8 +41,8 @@ final class TrailerGenerationOrchestrator
      */
     /**
      * @param array<string, mixed>|null $firstSceneVideoOptions Passed to the video provider for scene 1 only.
-     *        Use replicate_preset / replicate_model for a single benchmark clip, or replicate_benchmark_presets
-     *        (list of preset keys) to generate multiple scene-1 videos in one run.
+     *        Use replicate_preset / replicate_model for a single clip, or replicate_benchmark_presets (list of preset keys)
+     *        for scene-1 video-only benchmark: same prompt, multiple outputs; voice is skipped for that scene.
      */
     public function generateFromYaml(string $yamlPath, ?array $firstSceneVideoOptions = null): TrailerGenerationResult
     {
