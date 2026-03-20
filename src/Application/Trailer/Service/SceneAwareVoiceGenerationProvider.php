@@ -9,15 +9,17 @@ use App\Application\Trailer\Port\VoiceGenerationProviderInterface;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 
 /**
- * When $useRealForFirstSceneOnly is true and a real provider is wired, scene 1 uses Replicate TTS; other scenes use fake audio.
- * Toggle: parameter trailer.voice.real_for_first_scene_only (config/services.yaml).
+ * Same routing as video: TRAILER_REAL_FOR_FIRST_SCENE_ONLY=1 → only scene 1 real when wired;
+ * =0 → all scenes real. Real failures fall back to fake with metadata.
+ *
+ * Parameter: trailer.real_for_first_scene_only.
  */
 final class SceneAwareVoiceGenerationProvider implements VoiceGenerationProviderInterface
 {
     public function __construct(
         private readonly VoiceGenerationProviderInterface $fakeProvider,
         private readonly ?VoiceGenerationProviderInterface $realProvider = null,
-        private readonly bool $useRealForFirstSceneOnly = false,
+        private readonly bool $realForFirstSceneOnly = false,
     ) {
     }
 
@@ -26,7 +28,8 @@ final class SceneAwareVoiceGenerationProvider implements VoiceGenerationProvider
      */
     public function generateVoice(string $text, array $options = []): GeneratedAssetResult
     {
-        $provider = $this->selectProvider($options);
+        $sceneNumber = $this->sceneNumber($options);
+        $provider = $this->selectProvider($sceneNumber);
 
         try {
             return $provider->generateVoice($text, $options);
@@ -48,18 +51,42 @@ final class SceneAwareVoiceGenerationProvider implements VoiceGenerationProvider
     }
 
     /**
-     * @param array<string, mixed> $options
+     * TRAILER_REAL_FOR_FIRST_SCENE_ONLY semantics:
+     * - true  => only scene 1 uses real; scenes 2+ use fake
+     * - false => all scenes use real
      */
-    private function selectProvider(array $options): VoiceGenerationProviderInterface
+    private function selectProvider(?int $sceneNumber): VoiceGenerationProviderInterface
     {
-        if ($this->useRealForFirstSceneOnly && $this->realProvider !== null) {
-            $sceneNumber = $options['scene_number'] ?? null;
-
-            if ($sceneNumber === 1 || $sceneNumber === '1') {
-                return $this->realProvider;
-            }
+        if ($this->realProvider === null) {
+            return $this->fakeProvider;
         }
 
-        return $this->fakeProvider;
+        if ($this->realForFirstSceneOnly) {
+            if ($sceneNumber === 1) {
+                return $this->realProvider;
+            }
+
+            return $this->fakeProvider;
+        }
+
+        return $this->realProvider;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function sceneNumber(array $options): ?int
+    {
+        $sceneNumber = $options['scene_number'] ?? null;
+
+        if (is_int($sceneNumber)) {
+            return $sceneNumber;
+        }
+
+        if (is_string($sceneNumber) && ctype_digit($sceneNumber)) {
+            return (int) $sceneNumber;
+        }
+
+        return null;
     }
 }

@@ -21,8 +21,8 @@ Use the **Project ID** from the command output for reruns.
 
 Configured in `config/services.yaml`:
 
-- **`trailer.video.real_for_first_scene_only`** (default `true`): when the Replicate video provider is enabled and wired, **only scene 1** uses real video generation. Scenes 2+ use the fake video provider (fast, local placeholder MP4s).
-- **`trailer.voice.real_for_first_scene_only`**: same idea for TTS — **scene 1** can use Replicate voice when enabled; other scenes use fake audio.
+- **`trailer.real_for_first_scene_only`** (env **`TRAILER_REAL_FOR_FIRST_SCENE_ONLY`**, default `1` in `.env`): when `1` (true) and Replicate is enabled and wired, **every scene** uses real video and voice; when `0` (false), **only scene 1** uses real providers and scenes 2+ stay on fake.
+- **`trailer.video.real_for_first_scene_only`** / **`trailer.voice.real_for_first_scene_only`**: both mirror the shared parameter above (one toggle for both modalities).
 
 **Scene-aware routing** (`SceneAwareVideoGenerationProvider`, `SceneAwareVoiceGenerationProvider`): if the real provider throws, the router **falls back to fake** for that call and records `fallback_from: real` plus `real_attempt_*` fields (prediction id, model, remote status, error message) on the asset metadata so you can see what failed without opening logs.
 
@@ -34,6 +34,7 @@ Set in `.env.local` or the shell; never commit secrets.
 
 **Shared**
 
+- **`TRAILER_REAL_FOR_FIRST_SCENE_ONLY`**: `1` = all scenes use real (per modality flags); `0` = only scene 1 uses real, scenes 2+ use fake.
 - Replicate API token is read as **`TRAILER_VIDEO_REPLICATE_API_TOKEN`** (voice and video share `ReplicateClient`).
 
 **Video (Replicate)**

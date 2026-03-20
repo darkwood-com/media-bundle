@@ -472,7 +472,7 @@ final class GenerateTrailerCliCommand extends Command
         } elseif ($isFake && !$fallback) {
             $lines[] = '  Real provider attempted: <comment>no</>';
             $lines[] = '  Fake fallback used: <info>no</>';
-            $lines[] = '  <comment>Tip:</> enable/wire Replicate and scene-1 real routing to use live models.';
+            $lines[] = '  <comment>Tip:</> enable Replicate (video/voice), set <options=bold>TRAILER_REAL_FOR_FIRST_SCENE_ONLY=1</> for all scenes real (or <options=bold>=0</> for scene 1 only), and configure <options=bold>TRAILER_VIDEO_REPLICATE_API_TOKEN</>.';
         } else {
             $lines[] = '  Real provider attempted: <comment>unknown</>';
             $lines[] = '  Fake fallback used: ' . ($fallback ? '<comment>yes</>' : '<info>no</>');

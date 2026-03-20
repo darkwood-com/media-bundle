@@ -13,7 +13,7 @@ interface VideoGenerationProviderInterface
      * Returns the path to the generated file (local or storage key).
      *
      * Common options: target_path, scene_id, scene_number, duration, seed.
-     * scene_number is used by SceneAwareVideoGenerationProvider to route scene 1 to Replicate when configured.
+     * scene_number is used by SceneAwareVideoGenerationProvider (see TRAILER_REAL_FOR_FIRST_SCENE_ONLY).
      *
      * Replicate (real provider) also accepts:
      *  - replicate_preset: benchmark key (hailuo, seedance, p_video_draft)

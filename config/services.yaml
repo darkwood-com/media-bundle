@@ -7,9 +7,11 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
-    trailer.video.real_for_first_scene_only: true
-    # Voice: route scene 1 to Replicate TTS when enabled; other scenes stay fake. Defaults follow video scene-1 rollout.
-    trailer.voice.real_for_first_scene_only: '%trailer.video.real_for_first_scene_only%'
+    # Shared toggle (TRAILER_REAL_FOR_FIRST_SCENE_ONLY): 1/true = only scene 1 uses real when Replicate is wired;
+    # 0/false = all scenes use real. Applies identically to video and voice.
+    trailer.real_for_first_scene_only: '%env(bool:default::TRAILER_REAL_FOR_FIRST_SCENE_ONLY)%'
+    trailer.video.real_for_first_scene_only: '%trailer.real_for_first_scene_only%'
+    trailer.voice.real_for_first_scene_only: '%trailer.real_for_first_scene_only%'
 
     # Replicate video provider configuration (env-driven)
     # Secrets (API token) must be provided via real env or .env.local files.
@@ -54,7 +56,7 @@ services:
     App\Application\Trailer\Port\TrailerProjectSetupInterface:
         alias: App\Infrastructure\Trailer\Storage\LocalArtifactStorage
 
-    # Voice: fake by default; scene 1 can use Replicate TTS when enabled (see SceneAwareVoiceGenerationProvider).
+    # Voice: scene routing matches video (SceneAwareVoiceGenerationProvider + trailer.real_for_first_scene_only).
     App\Application\Trailer\Port\VoiceGenerationProviderInterface:
         alias: App\Application\Trailer\Service\SceneAwareVoiceGenerationProvider
 
@@ -62,18 +64,17 @@ services:
         arguments:
             $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider'
             $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVoiceGenerationProvider'
-            $useRealForFirstSceneOnly: '%trailer.voice.real_for_first_scene_only%'
+            $realForFirstSceneOnly: '%trailer.voice.real_for_first_scene_only%'
 
-    # Scene-aware video provider: keeps fake as default, optionally routes scene 1 to a real provider.
+    # Scene-aware video: fake when no real provider; else env toggle (see trailer.real_for_first_scene_only).
     App\Application\Trailer\Port\VideoGenerationProviderInterface:
         alias: App\Application\Trailer\Service\SceneAwareVideoGenerationProvider
 
     App\Application\Trailer\Service\SceneAwareVideoGenerationProvider:
         arguments:
             $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider'
-            # Optionally route the first scene to a real provider backed by Replicate.
             $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
-            $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
+            $realForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
 
     # Scene-1 video benchmark: call Replicate directly so a failed API call is not masked by the router’s fake fallback.
     App\Application\Trailer\Service\SceneVideoBenchmarkService:
