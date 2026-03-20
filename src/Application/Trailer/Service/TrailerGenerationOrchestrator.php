@@ -40,7 +40,9 @@ final class TrailerGenerationOrchestrator
      * @throws \App\Application\Trailer\Exception\InvalidTrailerDefinitionException
      */
     /**
-     * @param array<string, mixed>|null $firstSceneVideoOptions Passed to the video provider for scene 1 only (e.g. replicate_preset)
+     * @param array<string, mixed>|null $firstSceneVideoOptions Passed to the video provider for scene 1 only.
+     *        Use replicate_preset / replicate_model for a single benchmark clip, or replicate_benchmark_presets
+     *        (list of preset keys) to generate multiple scene-1 videos in one run.
      */
     public function generateFromYaml(string $yamlPath, ?array $firstSceneVideoOptions = null): TrailerGenerationResult
     {
@@ -61,8 +63,34 @@ final class TrailerGenerationOrchestrator
         foreach ($project->scenes() as $index => $scene) {
             $sceneDef = $sceneDefinitions[$index] ?? null;
             if ($sceneDef instanceof SceneDefinition) {
-                $videoOpts = ($index === 0 && $firstSceneVideoOptions !== null) ? $firstSceneVideoOptions : [];
-                $this->sceneGenerationService->generateScene($projectId, $scene, $sceneDef, $videoOpts);
+                $benchmarkPresets = [];
+                if ($index === 0 && $firstSceneVideoOptions !== null) {
+                    $raw = $firstSceneVideoOptions['replicate_benchmark_presets'] ?? null;
+                    if (is_array($raw)) {
+                        $benchmarkPresets = array_values(array_filter(
+                            $raw,
+                            static fn ($p): bool => is_string($p) && $p !== '',
+                        ));
+                    }
+                }
+
+                if ($index === 0 && $benchmarkPresets !== []) {
+                    $baseVideo = $firstSceneVideoOptions;
+                    unset($baseVideo['replicate_benchmark_presets']);
+                    $this->sceneGenerationService->generateSceneWithVideoBenchmarkPresets(
+                        $projectId,
+                        $scene,
+                        $sceneDef,
+                        $benchmarkPresets,
+                        $baseVideo,
+                    );
+                } else {
+                    $videoOpts = ($index === 0 && $firstSceneVideoOptions !== null) ? $firstSceneVideoOptions : [];
+                    if ($index === 0) {
+                        unset($videoOpts['replicate_benchmark_presets']);
+                    }
+                    $this->sceneGenerationService->generateScene($projectId, $scene, $sceneDef, $videoOpts);
+                }
             }
             $this->projectRepository->save($project);
 

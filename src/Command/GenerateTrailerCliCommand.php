@@ -44,7 +44,7 @@ final class GenerateTrailerCliCommand extends Command
             null,
             InputOption::VALUE_REQUIRED,
             sprintf(
-                'Replicate benchmark preset for scene 1 only (%s)',
+                'Replicate benchmark preset(s) for scene 1 only (%s). Comma-separated runs all in one project (e.g. hailuo,seedance,p_video_draft)',
                 implode(', ', ReplicateVideoModelPresets::presetKeys())
             ),
         );
@@ -99,37 +99,48 @@ final class GenerateTrailerCliCommand extends Command
         $scenes = $project->scenes();
         $firstScene = $scenes[0] ?? null;
         if ($firstScene !== null) {
-            $videoAsset = null;
+            $videoAssets = [];
             foreach ($firstScene->assets() as $asset) {
                 if ($asset->type() === AssetType::Video) {
-                    $videoAsset = $asset;
-                    break;
+                    $videoAssets[] = $asset;
                 }
             }
 
-            if ($videoAsset !== null) {
-                $metadata = $videoAsset->metadata();
-                $provider = $metadata['provider'] ?? $videoAsset->provider() ?? 'unknown';
-                $fallbackFrom = $metadata['fallback_from'] ?? null;
+            if ($videoAssets !== []) {
+                $io->writeln('');
+                $io->section('Scene 1 video' . (count($videoAssets) > 1 ? 's' : ''));
+
+                foreach ($videoAssets as $i => $videoAsset) {
+                    if ($i > 0) {
+                        $io->writeln('');
+                    }
+                    $metadata = $videoAsset->metadata();
+                    $provider = $metadata['provider'] ?? $videoAsset->provider() ?? 'unknown';
+                    $fallbackFrom = $metadata['fallback_from'] ?? null;
+
+                    $io->writeln(sprintf('Asset %s', $videoAsset->id()));
+                    $file = $metadata['video_artifact_file'] ?? ($videoAsset->path() !== null ? basename($videoAsset->path()) : null);
+                    if (is_string($file) && $file !== '') {
+                        $io->writeln(sprintf('File: %s', $file));
+                    }
+                    $io->writeln(sprintf('Provider: %s', $provider));
+
+                    $model = $metadata['model'] ?? null;
+                    if (is_string($model) && $model !== '') {
+                        $io->writeln(sprintf('Replicate model: %s', $model));
+                    }
+
+                    $preset = $metadata['replicate_preset'] ?? null;
+                    if (is_string($preset) && $preset !== '') {
+                        $io->writeln(sprintf('Video preset: %s', $preset));
+                    }
+
+                    if ($fallbackFrom !== null) {
+                        $io->writeln(sprintf('Used fallback from: %s', $fallbackFrom));
+                    }
+                }
 
                 $io->writeln('');
-                $io->section('Scene 1 video provider');
-                $io->writeln(sprintf('Provider: %s', $provider));
-
-                $model = $metadata['model'] ?? null;
-                if (is_string($model) && $model !== '') {
-                    $io->writeln(sprintf('Replicate model: %s', $model));
-                }
-
-                $preset = $metadata['replicate_preset'] ?? null;
-                if (is_string($preset) && $preset !== '') {
-                    $io->writeln(sprintf('Video preset: %s', $preset));
-                }
-
-                if ($fallbackFrom !== null) {
-                    $io->writeln(sprintf('Used fallback from: %s', $fallbackFrom));
-                }
-
                 $io->writeln(sprintf(
                     'Detailed provider metadata is stored in %s/project.json',
                     $outputDir
@@ -151,26 +162,38 @@ final class GenerateTrailerCliCommand extends Command
      */
     private function buildFirstSceneVideoOptions(InputInterface $input): ?array
     {
-        $preset = $input->getOption('video-preset');
+        $presetRaw = $input->getOption('video-preset');
         $model = $input->getOption('replicate-model');
 
-        if (!is_string($preset) || $preset === '') {
-            $preset = null;
-        }
         if (!is_string($model) || $model === '') {
             $model = null;
         }
 
-        if ($preset === null && $model === null) {
+        $presetList = [];
+        if (is_string($presetRaw) && $presetRaw !== '') {
+            $presetList = array_values(array_filter(
+                array_map(trim(...), explode(',', $presetRaw)),
+                static fn (string $s): bool => $s !== '',
+            ));
+        }
+
+        if ($presetList === [] && $model === null) {
             return null;
         }
 
         $opts = [];
-        if ($preset !== null) {
-            $opts['replicate_preset'] = $preset;
-        }
         if ($model !== null) {
             $opts['replicate_model'] = $model;
+        }
+
+        if (count($presetList) > 1) {
+            $opts['replicate_benchmark_presets'] = $presetList;
+
+            return $opts;
+        }
+
+        if (count($presetList) === 1) {
+            $opts['replicate_preset'] = $presetList[0];
         }
 
         return $opts;

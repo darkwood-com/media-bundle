@@ -28,8 +28,21 @@ interface ArtifactStorageInterface
 
     /**
      * Target path for scene video output (e.g. scenes/<n>-<id>/video.mp4).
+     *
+     * When $videoProviderOptions contains explicit benchmark-related keys
+     * (replicate_preset, replicate_model, video_artifact_key), the filename
+     * may be video--{model-key}.mp4 instead of video.mp4.
+     *
+     * @param array<string, mixed> $videoProviderOptions
      */
-    public function getSceneVideoOutputPath(string $projectId, Scene $scene): string;
+    public function getSceneVideoOutputPath(string $projectId, Scene $scene, array $videoProviderOptions = []): string;
+
+    /**
+     * Middle segment for benchmark filenames (video--{suffix}.mp4), or null for the default video.mp4.
+     *
+     * @param array<string, mixed> $videoProviderOptions
+     */
+    public function resolveSceneVideoArtifactSuffix(array $videoProviderOptions = []): ?string;
 
     /**
      * Ensure scene directory exists before writing voice/video artifacts.

@@ -18,6 +18,7 @@ interface VideoGenerationProviderInterface
      *  - replicate_preset: benchmark key (hailuo, seedance, p_video_draft)
      *  - replicate_model: model slug or version id (overrides preset / default config)
      *  - replicate_input: array merged into the API input object after preset defaults
+     *  - video_artifact_key: optional slug for local filename (video--{slug}.mp4); takes precedence over preset/model naming
      *
      * @param array<string, mixed> $options Optional provider-specific options (e.g. resolution, duration)
      */

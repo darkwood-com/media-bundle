@@ -11,7 +11,7 @@ php bin/console app:trailer:generate examples/trailer.yaml
 Output is written under **`var/trailers/<project-id>/`** (the command prints the exact path). Typical layout:
 
 - `var/trailers/<project-id>/input/` — copied definition
-- `var/trailers/<project-id>/scenes/<scene-number>-<scene-id>/` — per-scene artifacts (`voice.mp3`, `video.mp4`, etc.)
+- `var/trailers/<project-id>/scenes/<scene-number>-<scene-id>/` — per-scene artifacts (`voice.mp3`, `video.mp4`, and benchmark clips as `video--{model-key}.mp4`, etc.)
 - `var/trailers/<project-id>/render/` — final render (e.g. `trailer-manifest.json` or `final.mp4`)
 - `var/trailers/<project-id>/project.json` — full project state including per-asset provider metadata
 
@@ -43,6 +43,14 @@ php bin/console app:trailer:generate examples/trailer.yaml --video-preset=seedan
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=p_video_draft
 ```
 
+In **one project**, run all three presets (one voice pass, three video files under scene 1):
+
+```bash
+php bin/console app:trailer:generate examples/trailer.yaml --video-preset=hailuo,seedance,p_video_draft
+```
+
+Each clip is stored as `video--hailuo-02-fast.mp4`, `video--seedance-1-lite.mp4`, `video--p-video-draft.mp4` (see `video_artifact_file` / `model` / `replicate_preset` on each video asset in `project.json`).
+
 Presets map to:
 
 | Preset            | Replicate model              | Notes                          |
@@ -62,7 +70,8 @@ Programmatically, call `TrailerGenerationOrchestrator::generateFromYaml($path, [
 ### Inspect outputs and metadata
 
 - **Scene artifacts**: under `var/trailers/<project-id>/scenes/<scene-number>-<scene-id>/`.
-  - `video.mp4` is the generated clip for that scene.
+  - `video.mp4` is the default clip when no explicit benchmark options were passed for that generation.
+  - With `--video-preset` / `replicate_model` (or programmatic equivalents), scene 1 uses `video--{model-key}.mp4` so multiple models do not overwrite each other.
   - Provider metadata (including `provider`, `remote_job_id`, `remote_output_url`, `fallback_from`, etc.) is stored on the corresponding video asset inside `project.json`.
 - **Project metadata**: open `var/trailers/<project-id>/project.json` to see:
   - All scenes, assets, statuses, and provider metadata.

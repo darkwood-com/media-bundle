@@ -73,11 +73,16 @@ final class TrailerPathResolver
     }
 
     /**
-     * Path to scene video output: scenes/<n>-<id>/video.mp4
+     * Path to scene video output: scenes/<n>-<id>/video.mp4, or
+     * scenes/<n>-<id>/video--{suffix}.mp4 when $artifactSuffix is non-empty.
      */
-    public function sceneVideoPath(string $projectId, int $sceneNumber, string $sceneId): string
+    public function sceneVideoPath(string $projectId, int $sceneNumber, string $sceneId, ?string $artifactSuffix = null): string
     {
-        return $this->sceneDir($projectId, $sceneNumber, $sceneId) . self::SCENE_VIDEO_FILE;
+        $file = ($artifactSuffix !== null && $artifactSuffix !== '')
+            ? 'video--' . $artifactSuffix . '.mp4'
+            : self::SCENE_VIDEO_FILE;
+
+        return $this->sceneDir($projectId, $sceneNumber, $sceneId) . $file;
     }
 
     /**

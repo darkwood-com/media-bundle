@@ -39,10 +39,10 @@ final class SceneGenerationService
         $this->artifactStorage->ensureSceneDirectory($projectId, $scene);
 
         $voicePath = $this->artifactStorage->getSceneVoiceOutputPath($projectId, $scene);
-        $videoPath = $this->artifactStorage->getSceneVideoOutputPath($projectId, $scene);
+        $videoPath = $this->artifactStorage->getSceneVideoOutputPath($projectId, $scene, $videoProviderOptions);
 
         $voiceAsset = $this->findOrCreateAsset($scene, AssetType::Voice);
-        $videoAsset = $this->findOrCreateAsset($scene, AssetType::Video);
+        $videoAsset = $this->findOrCreateVideoAsset($scene, $videoProviderOptions);
 
         if ($definition->narration !== '') {
             if (!$this->generateVoice($scene, $voiceAsset, $definition->narration, $voicePath)) {
@@ -63,6 +63,54 @@ final class SceneGenerationService
         $scene->complete();
     }
 
+    /**
+     * Scene 1 benchmark: one voice pass, then one video file + video asset per preset.
+     *
+     * @param list<string>           $presetKeys
+     * @param array<string, mixed>   $baseVideoOptions merged before each replicate_preset (e.g. replicate_model)
+     */
+    public function generateSceneWithVideoBenchmarkPresets(
+        string $projectId,
+        Scene $scene,
+        SceneDefinition $definition,
+        array $presetKeys,
+        array $baseVideoOptions = [],
+    ): void {
+        $scene->markProcessing();
+        $this->artifactStorage->ensureSceneDirectory($projectId, $scene);
+
+        $voicePath = $this->artifactStorage->getSceneVoiceOutputPath($projectId, $scene);
+        $voiceAsset = $this->findOrCreateAsset($scene, AssetType::Voice);
+
+        if ($definition->narration !== '') {
+            if (!$this->generateVoice($scene, $voiceAsset, $definition->narration, $voicePath)) {
+                return;
+            }
+        } else {
+            $voiceAsset->complete($voicePath, ['skipped' => true, 'reason' => 'empty narration']);
+        }
+
+        if ($definition->videoPrompt === '') {
+            $videoPath = $this->artifactStorage->getSceneVideoOutputPath($projectId, $scene, []);
+            $videoAsset = $this->findOrCreateVideoAsset($scene, []);
+            $videoAsset->complete($videoPath, ['skipped' => true, 'reason' => 'empty prompt']);
+            $scene->complete();
+
+            return;
+        }
+
+        foreach ($presetKeys as $presetKey) {
+            $opts = array_merge($baseVideoOptions, ['replicate_preset' => $presetKey]);
+            $videoPath = $this->artifactStorage->getSceneVideoOutputPath($projectId, $scene, $opts);
+            $videoAsset = $this->findOrCreateVideoAsset($scene, $opts);
+            if (!$this->generateVideo($scene, $videoAsset, $definition->videoPrompt, $videoPath, $opts)) {
+                return;
+            }
+        }
+
+        $scene->complete();
+    }
+
     private function findOrCreateAsset(Scene $scene, AssetType $type): Asset
     {
         foreach ($scene->assets() as $asset) {
@@ -76,6 +124,57 @@ final class SceneGenerationService
             id: $id,
             sceneId: $scene->id(),
             type: $type,
+            status: AssetStatus::Pending,
+        );
+        $scene->addAsset($asset);
+
+        return $asset;
+    }
+
+    /**
+     * @param array<string, mixed> $videoProviderOptions
+     */
+    private function findOrCreateVideoAsset(Scene $scene, array $videoProviderOptions): Asset
+    {
+        $suffix = $this->artifactStorage->resolveSceneVideoArtifactSuffix($videoProviderOptions);
+        if ($suffix === null) {
+            return $this->findOrCreateCanonicalVideoAsset($scene);
+        }
+
+        $id = $scene->id() . '-video--' . $suffix;
+        foreach ($scene->assets() as $asset) {
+            if ($asset->id() === $id) {
+                return $asset;
+            }
+        }
+
+        $asset = new Asset(
+            id: $id,
+            sceneId: $scene->id(),
+            type: AssetType::Video,
+            status: AssetStatus::Pending,
+        );
+        $scene->addAsset($asset);
+
+        return $asset;
+    }
+
+    /**
+     * Default scene video slot ({sceneId}-video), distinct from benchmark assets ({sceneId}-video--suffix).
+     */
+    private function findOrCreateCanonicalVideoAsset(Scene $scene): Asset
+    {
+        $canonicalId = $scene->id() . '-' . AssetType::Video->value;
+        foreach ($scene->assets() as $asset) {
+            if ($asset->id() === $canonicalId) {
+                return $asset;
+            }
+        }
+
+        $asset = new Asset(
+            id: $canonicalId,
+            sceneId: $scene->id(),
+            type: AssetType::Video,
             status: AssetStatus::Pending,
         );
         $scene->addAsset($asset);
@@ -123,7 +222,7 @@ final class SceneGenerationService
                 'scene_id' => $scene->id(),
                 'scene_number' => $scene->number(),
             ], $extraOptions));
-            $metadata = $this->normalizeAssetMetadata($result->metadata, $result->path);
+            $metadata = $this->normalizeAssetMetadata($result->metadata, $result->path, $extraOptions);
             $asset->complete($result->path, $metadata);
             if ($result->duration !== null && $scene->duration() === null) {
                 $scene->setDuration($result->duration);
@@ -143,10 +242,11 @@ final class SceneGenerationService
 
     /**
      * @param array<string, mixed> $metadata
+     * @param array<string, mixed> $videoProviderOptions
      *
      * @return array<string, mixed>
      */
-    private function normalizeAssetMetadata(array $metadata, string $localPath): array
+    private function normalizeAssetMetadata(array $metadata, string $localPath, array $videoProviderOptions = []): array
     {
         // Always include the final local artifact path explicitly in metadata.
         $normalized = $metadata;
@@ -163,6 +263,12 @@ final class SceneGenerationService
 
         if (isset($metadata['remote_output_url']) && !isset($normalized['remote_output_url'])) {
             $normalized['remote_output_url'] = $metadata['remote_output_url'];
+        }
+
+        $suffix = $this->artifactStorage->resolveSceneVideoArtifactSuffix($videoProviderOptions);
+        if ($suffix !== null) {
+            $normalized['video_artifact_suffix'] = $suffix;
+            $normalized['video_artifact_file'] = basename($localPath);
         }
 
         return $normalized;

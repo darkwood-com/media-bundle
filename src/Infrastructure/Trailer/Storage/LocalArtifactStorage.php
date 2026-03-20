@@ -59,15 +59,28 @@ final class LocalArtifactStorage implements ArtifactStorageInterface, TrailerPro
     }
 
     /**
-     * Target path for scene video output: scenes/<scene-number>-<scene-id>/video.mp4
+     * Target path for scene video: scenes/.../video.mp4 or scenes/.../video--{suffix}.mp4 for benchmarks.
+     *
+     * @param array<string, mixed> $videoProviderOptions
      */
-    public function getSceneVideoOutputPath(string $projectId, Scene $scene): string
+    public function getSceneVideoOutputPath(string $projectId, Scene $scene, array $videoProviderOptions = []): string
     {
+        $suffix = $this->resolveSceneVideoArtifactSuffix($videoProviderOptions);
+
         return $this->pathResolver->sceneVideoPath(
             $projectId,
             $scene->number(),
             $scene->id(),
+            $suffix,
         );
+    }
+
+    /**
+     * @param array<string, mixed> $videoProviderOptions
+     */
+    public function resolveSceneVideoArtifactSuffix(array $videoProviderOptions = []): ?string
+    {
+        return BenchmarkVideoArtifactSuffix::resolve($videoProviderOptions);
     }
 
     /**
