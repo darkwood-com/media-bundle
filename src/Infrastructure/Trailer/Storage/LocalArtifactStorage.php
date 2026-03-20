@@ -100,6 +100,26 @@ final class LocalArtifactStorage implements ArtifactStorageInterface, TrailerPro
     }
 
     /**
+     * Path to concatenated scenario clip: render/scenario.mp4
+     */
+    public function getScenarioOutputPath(string $projectId): string
+    {
+        return $this->pathResolver->scenarioOutputPath($projectId);
+    }
+
+    /**
+     * Path to per-scene review clip: scenes/<n>-<id>/scene.mp4
+     */
+    public function getSceneClipOutputPath(string $projectId, Scene $scene): string
+    {
+        return $this->pathResolver->sceneClipPath(
+            $projectId,
+            $scene->number(),
+            $scene->id(),
+        );
+    }
+
+    /**
      * Ensure scene directory exists. Call before writing voice/video for a scene.
      */
     public function ensureSceneDirectory(string $projectId, Scene $scene): void

@@ -21,4 +21,9 @@ interface TrailerProjectSetupInterface
      * Path where the final render output (e.g. final.mp4) should be written.
      */
     public function getRenderOutputPath(string $projectId): string;
+
+    /**
+     * Directory for render artifacts (manifest, scenario.mp4, summaries).
+     */
+    public function getRenderOutputDir(string $projectId): string;
 }

@@ -18,6 +18,8 @@ final class TrailerProject
         private ProjectStatus $status = ProjectStatus::Draft,
         private ?\DateTimeImmutable $createdAt = null,
         private ?\DateTimeImmutable $updatedAt = null,
+        /** @var array<string, mixed> Persisted scenario.mp4 concat summary (see TrailerRenderingMetadata). */
+        private array $rendering = [],
     ) {
         $now = new \DateTimeImmutable();
         $this->createdAt ??= $now;
@@ -58,6 +60,23 @@ final class TrailerProject
     public function updatedAt(): \DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function rendering(): array
+    {
+        return $this->rendering;
+    }
+
+    /**
+     * @param array<string, mixed> $rendering
+     */
+    public function setRendering(array $rendering): void
+    {
+        $this->rendering = $rendering;
+        $this->touch();
     }
 
     public function addScene(Scene $scene): void

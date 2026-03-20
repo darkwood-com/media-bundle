@@ -73,9 +73,7 @@ final class RerunSceneCliCommand extends Command
             ],
         );
 
-        if ($result->renderOutputPath !== null) {
-            $io->text(sprintf('Render output: %s', $result->renderOutputPath));
-        }
+        TrailerRenderCliSummary::write($io, $result);
 
         return $project->status() === ProjectStatus::Completed
             ? Command::SUCCESS

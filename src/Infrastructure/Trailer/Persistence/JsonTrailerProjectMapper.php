@@ -34,6 +34,7 @@ final class JsonTrailerProjectMapper
             'status' => $project->status()->value,
             'createdAt' => $project->createdAt()->format(self::DATE_FORMAT),
             'updatedAt' => $project->updatedAt()->format(self::DATE_FORMAT),
+            'rendering' => $project->rendering(),
             'scenes' => array_map($this->sceneToArray(...), $project->scenes()),
         ];
     }
@@ -57,6 +58,7 @@ final class JsonTrailerProjectMapper
             status: $status,
             createdAt: $createdAt,
             updatedAt: $updatedAt,
+            rendering: $this->projectRenderingFromData($data),
         );
 
         $scenesData = $data['scenes'] ?? [];
@@ -92,6 +94,7 @@ final class JsonTrailerProjectMapper
             'duration' => $scene->duration(),
             'status' => $scene->status()->value,
             'lastError' => $scene->lastError(),
+            'clipRender' => $scene->clipRender(),
             'assets' => array_map($this->assetToArray(...), $scene->assets()),
         ];
     }
@@ -111,6 +114,7 @@ final class JsonTrailerProjectMapper
             duration: $this->floatOrNull($data, 'duration'),
             status: $this->enum($data, 'status', SceneStatus::class, SceneStatus::Pending),
             lastError: $this->stringOrNull($data, 'lastError'),
+            clipRender: $this->sceneClipRenderFromData($data),
         );
 
         $assetsData = $data['assets'] ?? [];
@@ -244,6 +248,48 @@ final class JsonTrailerProjectMapper
             }
         }
         return new \DateTimeImmutable();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private function projectRenderingFromData(array $data): array
+    {
+        $v = $data['rendering'] ?? [];
+        if (!is_array($v)) {
+            return [];
+        }
+        $out = [];
+        foreach ($v as $k => $val) {
+            if (is_string($k)) {
+                $out[$k] = $val;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private function sceneClipRenderFromData(array $data): array
+    {
+        $v = $data['clipRender'] ?? [];
+        if (!is_array($v)) {
+            return [];
+        }
+        $out = [];
+        foreach ($v as $k => $val) {
+            if (is_string($k)) {
+                $out[$k] = $val;
+            }
+        }
+
+        return $out;
     }
 
     /**

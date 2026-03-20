@@ -15,7 +15,13 @@ use App\Application\Trailer\Port\TrailerRendererInterface;
 use App\Domain\Trailer\Enum\SceneStatus;
 use App\Domain\Trailer\Scene;
 use App\Domain\Trailer\TrailerProject;
+use App\Infrastructure\Trailer\Rendering\RenderingSummaryJsonWriter;
+use App\Infrastructure\Trailer\Rendering\ScenarioConcatFfmpegRenderer;
+use App\Infrastructure\Trailer\Rendering\SceneClipFfmpegRenderer;
+use App\Infrastructure\Trailer\Rendering\SceneClipRenderReport;
+use App\Infrastructure\Trailer\Rendering\TrailerRenderingMetadata;
 use App\Infrastructure\Trailer\Rendering\VideoBenchmarkReportWriter;
+use App\Infrastructure\Trailer\Storage\LocalArtifactStorage;
 
 /**
  * Orchestrates trailer generation from a YAML definition: load, create project,
@@ -32,6 +38,10 @@ final class TrailerGenerationOrchestrator implements TrailerGenerationOrchestrat
         private readonly SceneGenerationService $sceneGenerationService,
         private readonly TrailerRendererInterface $renderer,
         private readonly VideoBenchmarkReportWriter $benchmarkReportWriter,
+        private readonly SceneClipFfmpegRenderer $sceneClipRenderer,
+        private readonly ScenarioConcatFfmpegRenderer $scenarioConcatRenderer,
+        private readonly RenderingSummaryJsonWriter $renderingSummaryWriter,
+        private readonly LocalArtifactStorage $artifactStorage,
     ) {
     }
 
@@ -62,6 +72,8 @@ final class TrailerGenerationOrchestrator implements TrailerGenerationOrchestrat
 
         $sceneDefinitions = $definition->scenes;
         $anyFailed = false;
+        /** @var list<SceneClipRenderReport> $sceneClipReports */
+        $sceneClipReports = [];
 
         foreach ($project->scenes() as $index => $scene) {
             $sceneDef = $sceneDefinitions[$index] ?? null;
@@ -95,6 +107,25 @@ final class TrailerGenerationOrchestrator implements TrailerGenerationOrchestrat
                     $this->sceneGenerationService->generateScene($projectId, $scene, $sceneDef, $videoOpts);
                 }
             }
+
+            if ($scene->status() === SceneStatus::Completed) {
+                $sceneClipReports[] = $this->sceneClipRenderer->renderIfPossible($projectId, $scene);
+            } else {
+                $sceneClipReports[] = new SceneClipRenderReport(
+                    $scene->id(),
+                    $scene->number(),
+                    SceneClipRenderReport::OUTCOME_SKIPPED_NOT_COMPLETED,
+                );
+            }
+
+            $lastClipReport = $sceneClipReports[\count($sceneClipReports) - 1];
+            $scene->setClipRender(TrailerRenderingMetadata::sceneClipPersist(
+                $lastClipReport,
+                $this->artifactStorage,
+                $projectId,
+                $scene,
+            ));
+
             $this->projectRepository->save($project);
 
             if ($scene->status() === SceneStatus::Failed) {
@@ -111,6 +142,17 @@ final class TrailerGenerationOrchestrator implements TrailerGenerationOrchestrat
 
         $benchmarkReportPaths = $this->benchmarkReportWriter->writeIfApplicable($project);
 
+        $scenarioConcat = $this->scenarioConcatRenderer->concatIfPossible($projectId, $project);
+
+        $this->renderingSummaryWriter->write(
+            $this->projectSetup->getRenderOutputDir($projectId),
+            $sceneClipReports,
+            $scenarioConcat,
+        );
+
+        $project->setRendering(TrailerRenderingMetadata::projectRenderingFromScenario($scenarioConcat));
+        $this->projectRepository->save($project);
+
         $renderOutputPath = null;
         if ($project->status()->value === 'completed') {
             $renderOutputPath = $this->renderer->render(
@@ -120,7 +162,13 @@ final class TrailerGenerationOrchestrator implements TrailerGenerationOrchestrat
             $this->projectRepository->save($project);
         }
 
-        return new TrailerGenerationResult($project, $renderOutputPath, $benchmarkReportPaths);
+        return new TrailerGenerationResult(
+            $project,
+            $renderOutputPath,
+            $benchmarkReportPaths,
+            $scenarioConcat->outputPath,
+            $scenarioConcat->skipReason,
+        );
     }
 
     private function createProjectId(string $yamlPath): string

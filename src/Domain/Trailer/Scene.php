@@ -21,6 +21,8 @@ final class Scene
         private ?float $duration = null,
         private SceneStatus $status = SceneStatus::Pending,
         private ?string $lastError = null,
+        /** @var array<string, mixed> Persisted scene.mp4 render outcome (see TrailerRenderingMetadata). */
+        private array $clipRender = [],
     ) {
     }
 
@@ -75,6 +77,22 @@ final class Scene
         return $this->lastError;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function clipRender(): array
+    {
+        return $this->clipRender;
+    }
+
+    /**
+     * @param array<string, mixed> $clipRender
+     */
+    public function setClipRender(array $clipRender): void
+    {
+        $this->clipRender = $clipRender;
+    }
+
     public function addAsset(Asset $asset): void
     {
         $this->assets[] = $asset;
@@ -113,5 +131,6 @@ final class Scene
         $this->status = SceneStatus::Pending;
         $this->lastError = null;
         $this->duration = null;
+        $this->clipRender = [];
     }
 }

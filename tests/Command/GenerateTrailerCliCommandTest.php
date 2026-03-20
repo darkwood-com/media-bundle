@@ -63,6 +63,8 @@ final class GenerateTrailerCliCommandTest extends TestCase
         }
 
         $out = $tester->getDisplay();
+        self::assertStringContainsString('Render — scene clips', $out);
+        self::assertStringContainsString('Scenario video (scenario.mp4)', $out);
         self::assertStringContainsString('Scene 1 — provider routing', $out);
         self::assertStringContainsString('Fake fallback used', $out);
         self::assertStringContainsString('Real attempt error', $out);
@@ -107,6 +109,8 @@ final class GenerateTrailerCliCommandTest extends TestCase
         }
 
         $out = $tester->getDisplay();
+        self::assertStringContainsString('Render — scene clips', $out);
+        self::assertStringContainsString('Scenario video (scenario.mp4)', $out);
         self::assertStringContainsString('Scene 1 — provider routing', $out);
         self::assertStringContainsString('Real provider attempted', $out);
         self::assertStringContainsString('succeeded', $out);

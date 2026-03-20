@@ -16,7 +16,9 @@ final class TrailerPathResolver
     private const INPUT_DEFINITION_FILE = 'definition.yaml';
     private const SCENE_VOICE_FILE = 'voice.mp3';
     private const SCENE_VIDEO_FILE = 'video.mp4';
+    private const SCENE_CLIP_FILE = 'scene.mp4';
     private const RENDER_OUTPUT_FILE = 'final.mp4';
+    private const SCENARIO_OUTPUT_FILE = 'scenario.mp4';
 
     public function __construct(
         private readonly string $projectDir,
@@ -73,6 +75,14 @@ final class TrailerPathResolver
     }
 
     /**
+     * Path to scene review clip: scenes/<n>-<id>/scene.mp4 (muxed video + voice when present).
+     */
+    public function sceneClipPath(string $projectId, int $sceneNumber, string $sceneId): string
+    {
+        return $this->sceneDir($projectId, $sceneNumber, $sceneId) . self::SCENE_CLIP_FILE;
+    }
+
+    /**
      * Path to scene video output: scenes/<n>-<id>/video.mp4, or
      * scenes/<n>-<id>/video--{suffix}.mp4 when $artifactSuffix is non-empty.
      */
@@ -91,6 +101,14 @@ final class TrailerPathResolver
     public function renderOutputPath(string $projectId): string
     {
         return $this->renderDir($projectId) . self::RENDER_OUTPUT_FILE;
+    }
+
+    /**
+     * Path to concatenated scenario review output: render/scenario.mp4
+     */
+    public function scenarioOutputPath(string $projectId): string
+    {
+        return $this->renderDir($projectId) . self::SCENARIO_OUTPUT_FILE;
     }
 
     /**

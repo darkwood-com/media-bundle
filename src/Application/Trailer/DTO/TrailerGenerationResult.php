@@ -15,6 +15,8 @@ final readonly class TrailerGenerationResult
         public TrailerProject $project,
         public ?string $renderOutputPath = null,
         public ?array $benchmarkReportPaths = null,
+        public ?string $scenarioOutputPath = null,
+        public ?string $scenarioSkipReason = null,
     ) {
     }
 }

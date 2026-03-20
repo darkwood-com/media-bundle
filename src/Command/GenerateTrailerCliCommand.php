@@ -142,6 +142,8 @@ final class GenerateTrailerCliCommand extends Command
             ],
         );
 
+        TrailerRenderCliSummary::write($io, $result);
+
         $scenes = $project->scenes();
         $firstScene = $scenes[0] ?? null;
         if ($firstScene !== null) {
@@ -256,10 +258,6 @@ final class GenerateTrailerCliCommand extends Command
                     $outputDir
                 ));
             }
-        }
-
-        if ($result->renderOutputPath !== null) {
-            $io->text(sprintf('Render output: %s', $result->renderOutputPath));
         }
 
         return $project->status() === ProjectStatus::Completed
