@@ -6,6 +6,7 @@ namespace App\Application\Trailer\Service;
 
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VideoGenerationProviderInterface;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 
 /**
  * Default video provider for trailer generation: fake for every scene except scene 1 when
@@ -36,6 +37,16 @@ final class SceneAwareVideoGenerationProvider implements VideoGenerationProvider
         } catch (\Throwable $e) {
             if ($provider === $this->realProvider && $this->fakeProvider !== $this->realProvider) {
                 $options['fallback_from'] = 'real';
+                $options['real_attempt_error_message'] = $e->getMessage();
+                if ($e instanceof ReplicatePredictionFailedException) {
+                    $options['real_attempt_prediction_id'] = $e->predictionId();
+                    $options['real_attempt_provider_model'] = $e->model();
+                    $options['real_attempt_remote_status'] = $e->remoteStatus();
+                    $preset = $e->replicatePreset();
+                    if ($preset !== null && $preset !== '') {
+                        $options['real_attempt_replicate_preset'] = $preset;
+                    }
+                }
 
                 return $this->fakeProvider->generateVideo($prompt, $options);
             }

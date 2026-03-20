@@ -220,6 +220,16 @@ final class GenerateTrailerCliCommand extends Command
                             $io->writeln(sprintf('Video preset: %s', $preset));
                         }
 
+                        $jobId = $metadata['prediction_id'] ?? $metadata['remote_job_id'] ?? null;
+                        if (is_string($jobId) && $jobId !== '') {
+                            $io->writeln(sprintf('Replicate prediction / job id: %s', $jobId));
+                        }
+
+                        $remoteUrl = $metadata['remote_output_url'] ?? null;
+                        if (is_string($remoteUrl) && $remoteUrl !== '') {
+                            $io->writeln(sprintf('Remote output URL: %s', $remoteUrl));
+                        }
+
                         if ($fallbackFrom !== null) {
                             $io->writeln(sprintf('Used fallback from: %s', $fallbackFrom));
                         }

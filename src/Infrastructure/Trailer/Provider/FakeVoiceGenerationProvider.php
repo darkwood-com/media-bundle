@@ -33,6 +33,8 @@ final class FakeVoiceGenerationProvider implements VoiceGenerationProviderInterf
             'narration' => $text,
         ];
 
+        $this->mergeRealAttemptHints($metadata, $options);
+
         return new GeneratedAssetResult(
             path: $targetPath,
             duration: 0.0,
@@ -44,6 +46,31 @@ final class FakeVoiceGenerationProvider implements VoiceGenerationProviderInterf
     {
         $hash = substr(hash('xxh128', $text), 0, 16);
         return sys_get_temp_dir() . '/fake_voice_' . $hash . '.' . $ext;
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     * @param array<string, mixed> $options
+     */
+    private function mergeRealAttemptHints(array &$metadata, array $options): void
+    {
+        if (($options['fallback_from'] ?? null) === 'real') {
+            $metadata['fallback_from'] = 'real';
+        }
+
+        foreach (
+            [
+                'real_attempt_prediction_id',
+                'real_attempt_provider_model',
+                'real_attempt_remote_status',
+                'real_attempt_error_message',
+            ] as $key
+        ) {
+            $v = $options[$key] ?? null;
+            if (is_string($v) && $v !== '') {
+                $metadata[$key] = $v;
+            }
+        }
     }
 
     /** @return string Minimal deterministic placeholder (valid MP3-like header + padding for pipeline) */

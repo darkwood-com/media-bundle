@@ -7,6 +7,8 @@ namespace App\Tests\Application\Trailer\Service;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VoiceGenerationProviderInterface;
 use App\Application\Trailer\Service\SceneAwareVoiceGenerationProvider;
+use App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use PHPUnit\Framework\TestCase;
 
 final class SceneAwareVoiceGenerationProviderTest extends TestCase
@@ -100,5 +102,36 @@ final class SceneAwareVoiceGenerationProviderTest extends TestCase
 
         $router = new SceneAwareVoiceGenerationProvider($fake, $real, true);
         $router->generateVoice('Hi', ['scene_number' => 1, 'target_path' => '/fallback.mp3']);
+    }
+
+    public function test_fallback_records_replicate_failure_on_voice_metadata(): void
+    {
+        $fake = new FakeVoiceGenerationProvider();
+        $real = $this->createMock(VoiceGenerationProviderInterface::class);
+        $real->expects(self::once())->method('generateVoice')->willThrowException(
+            ReplicatePredictionFailedException::terminalPredictionFailure(
+                'pred-v-fail',
+                'minimax/speech-x',
+                'failed',
+                'bad text',
+                null,
+            )
+        );
+
+        $targetPath = sys_get_temp_dir() . '/dw-fb-voice-' . uniqid('', true) . '.mp3';
+        $router = new SceneAwareVoiceGenerationProvider($fake, $real, true);
+        $result = $router->generateVoice('Hi', ['scene_number' => 1, 'target_path' => $targetPath]);
+
+        try {
+            self::assertSame('fake-voice', $result->metadata['provider'] ?? null);
+            self::assertSame('real', $result->metadata['fallback_from'] ?? null);
+            self::assertSame('pred-v-fail', $result->metadata['real_attempt_prediction_id'] ?? null);
+            self::assertSame('minimax/speech-x', $result->metadata['real_attempt_provider_model'] ?? null);
+            self::assertSame('failed', $result->metadata['real_attempt_remote_status'] ?? null);
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
     }
 }

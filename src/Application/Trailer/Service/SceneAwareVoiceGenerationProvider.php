@@ -6,6 +6,7 @@ namespace App\Application\Trailer\Service;
 
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VoiceGenerationProviderInterface;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 
 /**
  * When $useRealForFirstSceneOnly is true and a real provider is wired, scene 1 uses Replicate TTS; other scenes use fake audio.
@@ -32,6 +33,12 @@ final class SceneAwareVoiceGenerationProvider implements VoiceGenerationProvider
         } catch (\Throwable $e) {
             if ($provider === $this->realProvider && $this->fakeProvider !== $this->realProvider) {
                 $options['fallback_from'] = 'real';
+                $options['real_attempt_error_message'] = $e->getMessage();
+                if ($e instanceof ReplicatePredictionFailedException) {
+                    $options['real_attempt_prediction_id'] = $e->predictionId();
+                    $options['real_attempt_provider_model'] = $e->model();
+                    $options['real_attempt_remote_status'] = $e->remoteStatus();
+                }
 
                 return $this->fakeProvider->generateVoice($text, $options);
             }

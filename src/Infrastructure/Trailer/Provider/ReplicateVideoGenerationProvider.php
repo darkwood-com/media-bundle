@@ -7,6 +7,7 @@ namespace App\Infrastructure\Trailer\Provider;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VideoGenerationProviderInterface;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoInputMapper;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig;
@@ -69,27 +70,38 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             throw new \RuntimeException('Replicate video provider did not return a prediction id.');
         }
 
-        [$finalPrediction, $attempts] = $this->waitForPrediction($predictionId, $startPoll);
+        [$finalPrediction, $attempts] = $this->waitForPrediction(
+            $predictionId,
+            $startPoll,
+            $resolvedModel,
+            $presetKey,
+        );
 
         $status = (string) ($finalPrediction['status'] ?? 'unknown');
 
         if (!in_array($status, ['succeeded', 'failed', 'canceled'], true)) {
-            throw new \RuntimeException(sprintf(
-                'Replicate prediction %s ended in unexpected status "%s".',
+            throw new ReplicatePredictionFailedException(
+                sprintf(
+                    'Replicate prediction %s ended in unexpected status "%s".',
+                    $predictionId,
+                    $status
+                ),
                 $predictionId,
-                $status
-            ));
+                $resolvedModel,
+                $status,
+                null,
+                $presetKey,
+            );
         }
 
         if ($status !== 'succeeded') {
-            $error = $finalPrediction['error'] ?? null;
-
-            throw new \RuntimeException(sprintf(
-                'Replicate prediction %s failed with status "%s"%s',
+            throw ReplicatePredictionFailedException::terminalPredictionFailure(
                 $predictionId,
+                $resolvedModel,
                 $status,
-                $error !== null ? (': ' . (is_string($error) ? $error : json_encode($error))) : ''
-            ));
+                $finalPrediction['error'] ?? null,
+                $presetKey,
+            );
         }
 
         $output = $finalPrediction['output'] ?? null;
@@ -185,8 +197,12 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
     /**
      * @return array{0: array<string, mixed>, 1: int}
      */
-    private function waitForPrediction(string $predictionId, float $pollStartedAt): array
-    {
+    private function waitForPrediction(
+        string $predictionId,
+        float $pollStartedAt,
+        string $model,
+        ?string $replicatePreset,
+    ): array {
         $attempts = 0;
         $maxDuration = $this->config->maxPollDurationSeconds;
 
@@ -194,12 +210,19 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             ++$attempts;
 
             if ($maxDuration > 0 && (microtime(true) - $pollStartedAt) >= $maxDuration) {
-                throw new \RuntimeException(sprintf(
-                    'Replicate prediction %s exceeded poll timeout (%d seconds) after %d attempt(s).',
+                throw new ReplicatePredictionFailedException(
+                    sprintf(
+                        'Replicate prediction %s exceeded poll timeout (%d seconds) after %d attempt(s).',
+                        $predictionId,
+                        $maxDuration,
+                        $attempts
+                    ),
                     $predictionId,
-                    $maxDuration,
-                    $attempts
-                ));
+                    $model,
+                    'poll_timeout',
+                    sprintf('timeout_seconds=%d', $maxDuration),
+                    $replicatePreset,
+                );
             }
 
             $prediction = $this->replicateClient->getPrediction($predictionId);
@@ -210,12 +233,19 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             }
 
             if ($attempts >= $this->config->maxAttempts) {
-                throw new \RuntimeException(sprintf(
-                    'Replicate prediction %s did not reach a terminal state after %d attempts (last status: "%s").',
+                throw new ReplicatePredictionFailedException(
+                    sprintf(
+                        'Replicate prediction %s did not reach a terminal state after %d attempts (last status: "%s").',
+                        $predictionId,
+                        $attempts,
+                        $status
+                    ),
                     $predictionId,
-                    $attempts,
-                    $status
-                ));
+                    $model,
+                    'poll_exhausted',
+                    $status !== '' ? 'last_status=' . $status : null,
+                    $replicatePreset,
+                );
             }
 
             $interval = $this->config->pollIntervalSeconds;

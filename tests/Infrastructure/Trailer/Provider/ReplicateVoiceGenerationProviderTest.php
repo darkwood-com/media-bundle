@@ -7,6 +7,7 @@ namespace App\Tests\Infrastructure\Trailer\Provider;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVoiceProviderConfig;
 use App\Infrastructure\Trailer\Provider\ReplicateVoiceGenerationProvider;
 use PHPUnit\Framework\TestCase;
@@ -185,10 +186,15 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
             maxPollDurationSeconds: 0,
         ));
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Replicate prediction pred-bad failed with status "failed": TTS error');
-
-        $provider->generateVoice('Nope');
+        try {
+            $provider->generateVoice('Nope');
+            self::fail('Expected ReplicatePredictionFailedException');
+        } catch (ReplicatePredictionFailedException $e) {
+            self::assertSame('pred-bad', $e->predictionId());
+            self::assertSame('minimax/speech-2.6-turbo', $e->model());
+            self::assertSame('failed', $e->remoteStatus());
+            self::assertSame('TTS error', $e->remoteError());
+        }
     }
 
     private function makeProvider(HttpClientInterface $httpClient, ReplicateVoiceProviderConfig $voiceConfig): ReplicateVoiceGenerationProvider

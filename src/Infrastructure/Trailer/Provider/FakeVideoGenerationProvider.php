@@ -56,6 +56,8 @@ final class FakeVideoGenerationProvider implements VideoGenerationProviderInterf
             $metadata['replicate_preset'] = $options['replicate_preset'];
         }
 
+        $this->mergeRealAttemptHints($metadata, $options);
+
         return new GeneratedAssetResult(
             path: $targetPath,
             duration: 0.0,
@@ -67,6 +69,32 @@ final class FakeVideoGenerationProvider implements VideoGenerationProviderInterf
     {
         $hash = substr(hash('xxh128', $prompt), 0, 16);
         return sys_get_temp_dir() . '/fake_video_' . $hash . '.' . $ext;
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     * @param array<string, mixed> $options
+     */
+    private function mergeRealAttemptHints(array &$metadata, array $options): void
+    {
+        if (($options['fallback_from'] ?? null) === 'real') {
+            $metadata['fallback_from'] = 'real';
+        }
+
+        foreach (
+            [
+                'real_attempt_prediction_id',
+                'real_attempt_provider_model',
+                'real_attempt_remote_status',
+                'real_attempt_error_message',
+                'real_attempt_replicate_preset',
+            ] as $key
+        ) {
+            $v = $options[$key] ?? null;
+            if (is_string($v) && $v !== '') {
+                $metadata[$key] = $v;
+            }
+        }
     }
 
     /** @return string Minimal deterministic MP4 container (ftyp + moov) for pipeline */

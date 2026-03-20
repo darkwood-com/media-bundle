@@ -7,6 +7,7 @@ namespace App\Infrastructure\Trailer\Provider;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VoiceGenerationProviderInterface;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVoiceProviderConfig;
 
 /**
@@ -60,26 +61,32 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
             throw new \RuntimeException('Replicate voice provider did not return a prediction id.');
         }
 
-        [$finalPrediction, $attempts] = $this->waitForPrediction($predictionId, $startPoll);
+        [$finalPrediction, $attempts] = $this->waitForPrediction($predictionId, $startPoll, $model);
 
         $status = (string) ($finalPrediction['status'] ?? 'unknown');
         if (!in_array($status, ['succeeded', 'failed', 'canceled'], true)) {
-            throw new \RuntimeException(sprintf(
-                'Replicate prediction %s ended in unexpected status "%s".',
+            throw new ReplicatePredictionFailedException(
+                sprintf(
+                    'Replicate prediction %s ended in unexpected status "%s".',
+                    $predictionId,
+                    $status
+                ),
                 $predictionId,
-                $status
-            ));
+                $model,
+                $status,
+                null,
+                null,
+            );
         }
 
         if ($status !== 'succeeded') {
-            $error = $finalPrediction['error'] ?? null;
-
-            throw new \RuntimeException(sprintf(
-                'Replicate prediction %s failed with status "%s"%s',
+            throw ReplicatePredictionFailedException::terminalPredictionFailure(
                 $predictionId,
+                $model,
                 $status,
-                $error !== null ? (': ' . (is_string($error) ? $error : json_encode($error))) : ''
-            ));
+                $finalPrediction['error'] ?? null,
+                null,
+            );
         }
 
         $output = $finalPrediction['output'] ?? null;
@@ -267,7 +274,7 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
     /**
      * @return array{0: array<string, mixed>, 1: int}
      */
-    private function waitForPrediction(string $predictionId, float $pollStartedAt): array
+    private function waitForPrediction(string $predictionId, float $pollStartedAt, string $model): array
     {
         $attempts = 0;
         $maxDuration = $this->config->maxPollDurationSeconds;
@@ -276,12 +283,19 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
             ++$attempts;
 
             if ($maxDuration > 0 && (microtime(true) - $pollStartedAt) >= $maxDuration) {
-                throw new \RuntimeException(sprintf(
-                    'Replicate prediction %s exceeded poll timeout (%d seconds) after %d attempt(s).',
+                throw new ReplicatePredictionFailedException(
+                    sprintf(
+                        'Replicate prediction %s exceeded poll timeout (%d seconds) after %d attempt(s).',
+                        $predictionId,
+                        $maxDuration,
+                        $attempts
+                    ),
                     $predictionId,
-                    $maxDuration,
-                    $attempts
-                ));
+                    $model,
+                    'poll_timeout',
+                    sprintf('timeout_seconds=%d', $maxDuration),
+                    null,
+                );
             }
 
             $prediction = $this->replicateClient->getPrediction($predictionId);
@@ -292,12 +306,19 @@ final class ReplicateVoiceGenerationProvider implements VoiceGenerationProviderI
             }
 
             if ($attempts >= $this->config->maxAttempts) {
-                throw new \RuntimeException(sprintf(
-                    'Replicate prediction %s did not reach a terminal state after %d attempts (last status: "%s").',
+                throw new ReplicatePredictionFailedException(
+                    sprintf(
+                        'Replicate prediction %s did not reach a terminal state after %d attempts (last status: "%s").',
+                        $predictionId,
+                        $attempts,
+                        $status
+                    ),
                     $predictionId,
-                    $attempts,
-                    $status
-                ));
+                    $model,
+                    'poll_exhausted',
+                    $status !== '' ? 'last_status=' . $status : null,
+                    null,
+                );
             }
 
             $interval = $this->config->pollIntervalSeconds;

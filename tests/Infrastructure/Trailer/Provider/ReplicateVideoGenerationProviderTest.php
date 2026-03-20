@@ -7,6 +7,7 @@ namespace App\Tests\Infrastructure\Trailer\Provider;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoInputMapper;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig;
@@ -190,10 +191,15 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             maxPollDurationSeconds: 0,
         ));
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Replicate prediction pred-456 failed with status "failed": Something went wrong');
-
-        $provider->generateVideo('A failing prediction');
+        try {
+            $provider->generateVideo('A failing prediction');
+            self::fail('Expected ReplicatePredictionFailedException');
+        } catch (ReplicatePredictionFailedException $e) {
+            self::assertSame('pred-456', $e->predictionId());
+            self::assertSame('test-model', $e->model());
+            self::assertSame('failed', $e->remoteStatus());
+            self::assertSame('Something went wrong', $e->remoteError());
+        }
     }
 
     public function test_generate_video_preset_and_replicate_input_shape(): void
@@ -309,10 +315,13 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             maxPollDurationSeconds: 1,
         ));
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('exceeded poll timeout');
-
-        $provider->generateVideo('Slow job');
+        try {
+            $provider->generateVideo('Slow job');
+            self::fail('Expected ReplicatePredictionFailedException');
+        } catch (ReplicatePredictionFailedException $e) {
+            self::assertSame('pred-slow', $e->predictionId());
+            self::assertSame('poll_timeout', $e->remoteStatus());
+        }
     }
 
     private function makeProvider(HttpClientInterface $httpClient, ReplicateVideoProviderConfig $videoConfig): ReplicateVideoGenerationProvider

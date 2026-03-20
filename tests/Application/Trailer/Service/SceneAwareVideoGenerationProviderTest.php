@@ -7,6 +7,8 @@ namespace App\Tests\Application\Trailer\Service;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VideoGenerationProviderInterface;
 use App\Application\Trailer\Service\SceneAwareVideoGenerationProvider;
+use App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use PHPUnit\Framework\TestCase;
 
 final class SceneAwareVideoGenerationProviderTest extends TestCase
@@ -100,5 +102,38 @@ final class SceneAwareVideoGenerationProviderTest extends TestCase
 
         $router = new SceneAwareVideoGenerationProvider($fake, $real, true);
         $router->generateVideo('p', ['scene_number' => 1, 'target_path' => '/fallback.mp4']);
+    }
+
+    public function test_fallback_records_real_attempt_prediction_and_model(): void
+    {
+        $fake = new FakeVideoGenerationProvider();
+        $real = $this->createMock(VideoGenerationProviderInterface::class);
+        $real->expects(self::once())->method('generateVideo')->willThrowException(
+            ReplicatePredictionFailedException::terminalPredictionFailure(
+                'pred-fallback',
+                'vendor/model-x',
+                'failed',
+                'rate limit',
+                'hailuo',
+            )
+        );
+
+        $targetPath = sys_get_temp_dir() . '/dw-fb-video-' . uniqid('', true) . '.mp4';
+        $router = new SceneAwareVideoGenerationProvider($fake, $real, true);
+        $result = $router->generateVideo('prompt', ['scene_number' => 1, 'target_path' => $targetPath]);
+
+        try {
+            self::assertSame('fake-video', $result->metadata['provider'] ?? null);
+            self::assertSame('real', $result->metadata['fallback_from'] ?? null);
+            self::assertSame('pred-fallback', $result->metadata['real_attempt_prediction_id'] ?? null);
+            self::assertSame('vendor/model-x', $result->metadata['real_attempt_provider_model'] ?? null);
+            self::assertSame('failed', $result->metadata['real_attempt_remote_status'] ?? null);
+            self::assertStringContainsString('rate limit', (string) ($result->metadata['real_attempt_error_message'] ?? ''));
+            self::assertSame('hailuo', $result->metadata['real_attempt_replicate_preset'] ?? null);
+        } finally {
+            if (is_file($targetPath)) {
+                @unlink($targetPath);
+            }
+        }
     }
 }

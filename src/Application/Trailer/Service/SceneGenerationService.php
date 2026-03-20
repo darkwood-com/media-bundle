@@ -193,10 +193,7 @@ final class SceneGenerationService
             return true;
         } catch (\Throwable $e) {
             $message = 'Voice generation failed: ' . $e->getMessage();
-            $asset->updateMetadata([
-                'provider_state' => 'error',
-                'provider_error_message' => $e->getMessage(),
-            ]);
+            $asset->updateMetadata(ProviderFailureMetadata::forThrowable($e));
             $asset->fail($message);
             $scene->fail($message);
             return false;
@@ -224,10 +221,7 @@ final class SceneGenerationService
             return true;
         } catch (\Throwable $e) {
             $message = 'Video generation failed: ' . $e->getMessage();
-            $asset->updateMetadata([
-                'provider_state' => 'error',
-                'provider_error_message' => $e->getMessage(),
-            ]);
+            $asset->updateMetadata(ProviderFailureMetadata::forThrowable($e));
             $asset->fail($message);
             $scene->fail($message);
             return false;
@@ -242,11 +236,10 @@ final class SceneGenerationService
      */
     private function normalizeAssetMetadata(array $metadata, string $localPath, array $videoProviderOptions = []): array
     {
-        // Always include the final local artifact path explicitly in metadata.
         $normalized = $metadata;
         $normalized['local_path'] = $localPath;
+        $normalized['local_artifact_path'] = $localPath;
 
-        // Standard aliases for remote job lifecycle while preserving provider-specific keys.
         if (isset($metadata['prediction_id']) && !isset($normalized['remote_job_id'])) {
             $normalized['remote_job_id'] = $metadata['prediction_id'];
         }
@@ -255,8 +248,9 @@ final class SceneGenerationService
             $normalized['provider_state'] = $metadata['provider_status'];
         }
 
-        if (isset($metadata['remote_output_url']) && !isset($normalized['remote_output_url'])) {
-            $normalized['remote_output_url'] = $metadata['remote_output_url'];
+        if (isset($metadata['model']) && is_string($metadata['model']) && $metadata['model'] !== ''
+            && !isset($normalized['provider_model'])) {
+            $normalized['provider_model'] = $metadata['model'];
         }
 
         $suffix = $this->artifactStorage->resolveSceneVideoArtifactSuffix($videoProviderOptions);

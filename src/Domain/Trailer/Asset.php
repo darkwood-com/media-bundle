@@ -78,6 +78,11 @@ final class Asset
         $this->path = $path;
         $this->metadata = array_merge($this->metadata, $metadata);
         $this->lastError = null;
+
+        $p = $this->metadata['provider'] ?? null;
+        if (is_string($p) && $p !== '') {
+            $this->provider = $p;
+        }
     }
 
     public function fail(string $error): void
