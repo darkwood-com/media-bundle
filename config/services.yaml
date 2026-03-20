@@ -60,6 +60,11 @@ services:
             $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
             $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
 
+    # Scene-1 video benchmark: call Replicate directly so a failed API call is not masked by the router’s fake fallback.
+    App\Application\Trailer\Service\SceneVideoBenchmarkService:
+        arguments:
+            $videoProvider: '@App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
+
     # Shared Replicate HTTP config (token + base URL; reuse for voice later)
     App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig:
         arguments:

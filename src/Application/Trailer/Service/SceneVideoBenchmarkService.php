@@ -14,6 +14,9 @@ use App\Domain\Trailer\Scene;
 /**
  * Scene 1 video-only benchmark: same prompt, multiple Replicate presets, distinct artifact files.
  *
+ * The Symfony container injects ReplicateVideoGenerationProvider (not SceneAwareVideoGenerationProvider) so
+ * API failures are not masked by the router’s fake fallback.
+ *
  * Voice is intentionally not generated here; pair with {@see SceneGenerationService::generateSceneWithVideoBenchmarkPresets}
  * which marks the voice asset skipped for benchmark runs.
  */

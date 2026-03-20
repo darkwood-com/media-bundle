@@ -8,8 +8,12 @@ use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VideoGenerationProviderInterface;
 
 /**
- * Tiny router that keeps fake video generation as the default
- * while optionally delegating the first scene to a real provider.
+ * Default video provider for trailer generation: fake for every scene except scene 1 when
+ * $useRealForFirstSceneOnly is true and $realProvider is non-null (Replicate).
+ *
+ * The CLI `app:trailer:generate` path uses this service; scene-1 benchmark presets call
+ * \App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider directly
+ * (\App\Application\Trailer\Service\SceneVideoBenchmarkService).
  */
 final class SceneAwareVideoGenerationProvider implements VideoGenerationProviderInterface
 {
