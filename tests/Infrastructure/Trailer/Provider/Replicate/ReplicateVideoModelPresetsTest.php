@@ -34,4 +34,30 @@ final class ReplicateVideoModelPresetsTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         ReplicateVideoModelPresets::resolve('no-such-preset');
     }
+
+    public function test_core_benchmark_excludes_p_video(): void
+    {
+        self::assertSame(
+            [ReplicateVideoModelPresets::HAILUO, ReplicateVideoModelPresets::SEEDANCE],
+            ReplicateVideoModelPresets::coreBenchmarkPresetKeys()
+        );
+    }
+
+    public function test_preset_key_from_cli_video_model(): void
+    {
+        self::assertSame(
+            ReplicateVideoModelPresets::P_VIDEO_DRAFT,
+            ReplicateVideoModelPresets::presetKeyFromCliVideoModel('pvideo')
+        );
+        self::assertSame(
+            ReplicateVideoModelPresets::HAILUO,
+            ReplicateVideoModelPresets::presetKeyFromCliVideoModel('HAILUO')
+        );
+    }
+
+    public function test_preset_key_from_cli_unknown_throws(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        ReplicateVideoModelPresets::presetKeyFromCliVideoModel('other');
+    }
 }

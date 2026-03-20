@@ -40,11 +40,37 @@ final class GenerateTrailerCliCommand extends Command
         );
 
         $this->addOption(
+            'video-model',
+            null,
+            InputOption::VALUE_REQUIRED,
+            sprintf(
+                'Scene 1 only: single Replicate video preset (%s). Shorthand for one `--video-preset`',
+                implode('|', ReplicateVideoModelPresets::cliVideoModelChoices())
+            ),
+        );
+
+        $this->addOption(
+            'benchmark-video',
+            null,
+            InputOption::VALUE_NONE,
+            sprintf(
+                'Scene 1 only: benchmark hailuo + seedance (voice skipped). Use --include-pvideo to add prunaai/p-video',
+            ),
+        );
+
+        $this->addOption(
+            'include-pvideo',
+            null,
+            InputOption::VALUE_NONE,
+            'With --benchmark-video only: also run the prunaai/p-video (draft) preset',
+        );
+
+        $this->addOption(
             'video-preset',
             null,
             InputOption::VALUE_REQUIRED,
             sprintf(
-                'Replicate benchmark preset(s) for scene 1 only (%s). Comma-separated runs all in one project (e.g. hailuo,seedance,p_video_draft)',
+                'Replicate preset key(s) for scene 1 only (%s). Comma-separated = one project, multiple clips',
                 implode(', ', ReplicateVideoModelPresets::presetKeys())
             ),
         );
@@ -54,7 +80,7 @@ final class GenerateTrailerCliCommand extends Command
             null,
             InputOption::VALUE_NONE,
             sprintf(
-                'Scene 1 only: run all video benchmark presets (%s) in one project; voice skipped for scene 1',
+                'Scene 1 only: all presets (%s) in one project; same as comma-separated --video-preset (legacy)',
                 implode(', ', ReplicateVideoModelPresets::presetKeys())
             ),
         );
@@ -81,10 +107,16 @@ final class GenerateTrailerCliCommand extends Command
             return Command::FAILURE;
         }
 
+        try {
+            $firstSceneVideoOptions = $this->buildFirstSceneVideoOptions($input);
+        } catch (\InvalidArgumentException $e) {
+            $io->error($e->getMessage());
+
+            return Command::FAILURE;
+        }
+
         $io->section('Generating trailer');
         $io->text('Loading definition and running pipeline…');
-
-        $firstSceneVideoOptions = $this->buildFirstSceneVideoOptions($input);
 
         try {
             $result = $this->orchestrator->generateFromYaml($yamlPath, $firstSceneVideoOptions);
@@ -169,27 +201,67 @@ final class GenerateTrailerCliCommand extends Command
 
     /**
      * @return array<string, mixed>|null
+     *
+     * @throws \InvalidArgumentException on conflicting scene-1 video flags or unknown presets
      */
     private function buildFirstSceneVideoOptions(InputInterface $input): ?array
     {
         $presetRaw = $input->getOption('video-preset');
         $model = $input->getOption('replicate-model');
-        $videoBenchmark = (bool) $input->getOption('video-benchmark');
+        $legacyBenchmark = (bool) $input->getOption('video-benchmark');
+        $benchmarkVideo = (bool) $input->getOption('benchmark-video');
+        $includePvideo = (bool) $input->getOption('include-pvideo');
+
+        $videoModelRaw = $input->getOption('video-model');
+        $videoModelCli = is_string($videoModelRaw) && $videoModelRaw !== ''
+            ? strtolower(trim($videoModelRaw))
+            : null;
 
         if (!is_string($model) || $model === '') {
             $model = null;
         }
 
-        $presetList = [];
+        $fromPresetOption = [];
         if (is_string($presetRaw) && $presetRaw !== '') {
-            $presetList = array_values(array_filter(
+            $fromPresetOption = array_values(array_filter(
                 array_map(trim(...), explode(',', $presetRaw)),
                 static fn (string $s): bool => $s !== '',
             ));
         }
 
-        if ($presetList === [] && $videoBenchmark) {
-            $presetList = ReplicateVideoModelPresets::presetKeys();
+        foreach ($fromPresetOption as $key) {
+            ReplicateVideoModelPresets::resolve($key);
+        }
+
+        $benchmarkPresets = null;
+        if ($legacyBenchmark) {
+            $benchmarkPresets = ReplicateVideoModelPresets::presetKeys();
+        } elseif ($benchmarkVideo) {
+            $benchmarkPresets = ReplicateVideoModelPresets::coreBenchmarkPresetKeys();
+            if ($includePvideo) {
+                $benchmarkPresets[] = ReplicateVideoModelPresets::P_VIDEO_DRAFT;
+            }
+        }
+
+        if ($videoModelCli !== null && ($benchmarkPresets !== null || $fromPresetOption !== [])) {
+            throw new \InvalidArgumentException(
+                'Use only one of --video-model, --video-preset / --video-benchmark, or --benchmark-video.'
+            );
+        }
+
+        if ($benchmarkPresets !== null && $fromPresetOption !== []) {
+            throw new \InvalidArgumentException(
+                'Do not combine --video-preset with --video-benchmark or --benchmark-video.'
+            );
+        }
+
+        $presetList = [];
+        if ($benchmarkPresets !== null) {
+            $presetList = $benchmarkPresets;
+        } elseif ($fromPresetOption !== []) {
+            $presetList = $fromPresetOption;
+        } elseif ($videoModelCli !== null) {
+            $presetList = [ReplicateVideoModelPresets::presetKeyFromCliVideoModel($videoModelCli)];
         }
 
         if ($presetList === [] && $model === null) {

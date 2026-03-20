@@ -37,6 +37,19 @@ To verify that Replicate was used, run the generate command and look for the **"
 
 For quick A/B runs without changing `.env` each time, pass **scene 1 only** options on the CLI. **Benchmark runs skip voice (TTS) for scene 1** so you only pay for video API calls; other scenes still get voice + video as usual.
 
+**Shorthand (MVP-friendly):**
+
+```bash
+# One model for scene 1 (--video-model: hailuo | seedance | pvideo)
+php bin/console app:trailer:generate examples/trailer.yaml --video-model=hailuo
+
+# Benchmark scene 1: hailuo + seedance (add prunaai/p-video with --include-pvideo)
+php bin/console app:trailer:generate examples/trailer.yaml --benchmark-video
+php bin/console app:trailer:generate examples/trailer.yaml --benchmark-video --include-pvideo
+```
+
+**Preset keys** (same behavior, explicit internal names):
+
 ```bash
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=hailuo
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=seedance
@@ -49,7 +62,7 @@ In **one project**, run all three presets (three video files under scene 1, same
 php bin/console app:trailer:generate examples/trailer.yaml --video-preset=hailuo,seedance,p_video_draft
 ```
 
-Shortcut (equivalent preset list: `hailuo`, `seedance`, `p_video_draft`):
+Legacy shortcut — **all** presets (`hailuo`, `seedance`, `p_video_draft`):
 
 ```bash
 php bin/console app:trailer:generate examples/trailer.yaml --video-benchmark

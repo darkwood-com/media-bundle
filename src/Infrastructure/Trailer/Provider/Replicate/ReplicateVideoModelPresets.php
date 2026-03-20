@@ -16,6 +16,9 @@ final class ReplicateVideoModelPresets
     public const SEEDANCE = 'seedance';
     public const P_VIDEO_DRAFT = 'p_video_draft';
 
+    /** CLI alias for {@see self::P_VIDEO_DRAFT} (`prunaai/p-video`). */
+    public const CLI_VIDEO_PVIDEO = 'pvideo';
+
     /** @var array<string, array{model: string, input: array<string, mixed>}> */
     private const PRESETS = [
         self::HAILUO => [
@@ -38,6 +41,48 @@ final class ReplicateVideoModelPresets
     public static function presetKeys(): array
     {
         return array_keys(self::PRESETS);
+    }
+
+    /**
+     * Default Scene 1 presets for CLI `--benchmark-video` (excludes p-video).
+     * Add {@see self::P_VIDEO_DRAFT} with `--include-pvideo`.
+     *
+     * @return list<string>
+     */
+    public static function coreBenchmarkPresetKeys(): array
+    {
+        return [self::HAILUO, self::SEEDANCE];
+    }
+
+    /**
+     * Allowed values for `--video-model`.
+     *
+     * @return list<string>
+     */
+    public static function cliVideoModelChoices(): array
+    {
+        return [self::HAILUO, self::SEEDANCE, self::CLI_VIDEO_PVIDEO];
+    }
+
+    /**
+     * Map CLI `--video-model` value to an internal preset key.
+     */
+    public static function presetKeyFromCliVideoModel(string $cli): string
+    {
+        $normalized = strtolower(trim($cli));
+        if ($normalized === self::CLI_VIDEO_PVIDEO) {
+            return self::P_VIDEO_DRAFT;
+        }
+
+        if ($normalized === self::HAILUO || $normalized === self::SEEDANCE) {
+            return $normalized;
+        }
+
+        throw new \InvalidArgumentException(sprintf(
+            'Unknown --video-model "%s". Use one of: %s',
+            $cli,
+            implode(', ', self::cliVideoModelChoices())
+        ));
     }
 
     /**
