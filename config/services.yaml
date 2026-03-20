@@ -14,8 +14,11 @@ parameters:
     trailer.video.replicate.enabled: '%env(bool:default::TRAILER_VIDEO_REPLICATE_ENABLED)%'
     trailer.video.replicate.api_token: '%env(string:default::TRAILER_VIDEO_REPLICATE_API_TOKEN)%'
     trailer.video.replicate.model: '%env(string:default::TRAILER_VIDEO_REPLICATE_MODEL)%'
+    trailer.video.replicate.default_preset: '%env(string:default::TRAILER_VIDEO_REPLICATE_DEFAULT_PRESET)%'
     trailer.video.replicate.poll_interval_seconds: '%env(int:default::TRAILER_VIDEO_REPLICATE_POLL_INTERVAL_SECONDS)%'
     trailer.video.replicate.max_attempts: '%env(int:default::TRAILER_VIDEO_REPLICATE_MAX_ATTEMPTS)%'
+    trailer.video.replicate.poll_timeout_seconds: '%env(int:default::TRAILER_VIDEO_REPLICATE_POLL_TIMEOUT_SECONDS)%'
+    replicate.api.base_url: 'https://api.replicate.com/v1'
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -57,14 +60,24 @@ services:
             $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
             $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
 
-    # Replicate video provider configuration object
+    # Shared Replicate HTTP config (token + base URL; reuse for voice later)
+    App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig:
+        arguments:
+            $apiToken: '%trailer.video.replicate.api_token%'
+            $baseUrl: '%replicate.api.base_url%'
+
+    App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient:
+        arguments:
+            $httpClient: '@http_client'
+
     App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig:
         arguments:
             $enabled: '%trailer.video.replicate.enabled%'
-            $apiToken: '%trailer.video.replicate.api_token%'
             $model: '%trailer.video.replicate.model%'
+            $defaultPreset: '%trailer.video.replicate.default_preset%'
             $pollIntervalSeconds: '%trailer.video.replicate.poll_interval_seconds%'
             $maxAttempts: '%trailer.video.replicate.max_attempts%'
+            $maxPollDurationSeconds: '%trailer.video.replicate.poll_timeout_seconds%'
 
     App\Application\Trailer\Port\TrailerRendererInterface:
         alias: App\Infrastructure\Trailer\Rendering\ManifestTrailerRenderer

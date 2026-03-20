@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Infrastructure\Trailer\Provider;
 
 use App\Application\Trailer\DTO\GeneratedAssetResult;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoInputMapper;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig;
 use App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider;
@@ -88,15 +91,14 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
                 throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
             });
 
-        $config = new ReplicateVideoProviderConfig(
+        $provider = $this->makeProvider($httpClient, new ReplicateVideoProviderConfig(
             enabled: true,
-            apiToken: 'test-token',
             model: 'test-model',
+            defaultPreset: '',
             pollIntervalSeconds: 0,
             maxAttempts: 5,
-        );
-
-        $provider = new ReplicateVideoGenerationProvider($httpClient, $config);
+            maxPollDurationSeconds: 0,
+        ));
 
         $targetPath = sys_get_temp_dir() . '/replicate_test_video_' . uniqid('', true) . '.mp4';
 
@@ -118,6 +120,7 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             self::assertSame('succeeded', $result->metadata['provider_status'] ?? null);
             self::assertSame('pred-123', $result->metadata['prediction_id'] ?? null);
             self::assertSame('test-model', $result->metadata['model'] ?? null);
+            self::assertNull($result->metadata['replicate_preset'] ?? null);
             self::assertSame('https://cdn.example.com/video.mp4', $result->metadata['remote_output_url'] ?? null);
             self::assertSame('scene-42', $result->metadata['scene_id'] ?? null);
             self::assertSame('A mysterious forest', $result->metadata['prompt'] ?? null);
@@ -176,15 +179,14 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
                 throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
             });
 
-        $config = new ReplicateVideoProviderConfig(
+        $provider = $this->makeProvider($httpClient, new ReplicateVideoProviderConfig(
             enabled: true,
-            apiToken: 'test-token',
             model: 'test-model',
+            defaultPreset: '',
             pollIntervalSeconds: 0,
             maxAttempts: 3,
-        );
-
-        $provider = new ReplicateVideoGenerationProvider($httpClient, $config);
+            maxPollDurationSeconds: 0,
+        ));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Replicate prediction pred-456 failed with status "failed": Something went wrong');
@@ -238,15 +240,14 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
                 throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
             });
 
-        $config = new ReplicateVideoProviderConfig(
+        $provider = $this->makeProvider($httpClient, new ReplicateVideoProviderConfig(
             enabled: true,
-            apiToken: 't',
             model: 'fallback/from-config',
+            defaultPreset: '',
             pollIntervalSeconds: 0,
             maxAttempts: 5,
-        );
-
-        $provider = new ReplicateVideoGenerationProvider($httpClient, $config);
+            maxPollDurationSeconds: 0,
+        ));
 
         $targetPath = sys_get_temp_dir() . '/replicate_preset_test_' . uniqid('', true) . '.mp4';
 
@@ -270,5 +271,57 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
             }
         }
     }
-}
 
+    public function test_poll_timeout_exceeded(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+
+        $createResponse = $this->createMock(ResponseInterface::class);
+        $processingResponse = $this->createMock(ResponseInterface::class);
+
+        $createResponse->method('toArray')->with(false)->willReturn(['id' => 'pred-slow', 'status' => 'starting']);
+        $processingResponse->method('toArray')->with(false)->willReturn([
+            'id' => 'pred-slow',
+            'status' => 'processing',
+        ]);
+
+        $httpClient
+            ->method('request')
+            ->willReturnCallback(function (string $method, string $url) use ($createResponse, $processingResponse) {
+                if ($method === 'POST' && str_contains($url, '/predictions')) {
+                    return $createResponse;
+                }
+                if ($method === 'GET' && str_contains($url, '/predictions/pred-slow')) {
+                    return $processingResponse;
+                }
+
+                throw new \RuntimeException('Unexpected HTTP request: ' . $method . ' ' . $url);
+            });
+
+        $provider = $this->makeProvider($httpClient, new ReplicateVideoProviderConfig(
+            enabled: true,
+            model: 'm',
+            defaultPreset: '',
+            pollIntervalSeconds: 1,
+            maxAttempts: 50,
+            maxPollDurationSeconds: 1,
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('exceeded poll timeout');
+
+        $provider->generateVideo('Slow job');
+    }
+
+    private function makeProvider(HttpClientInterface $httpClient, ReplicateVideoProviderConfig $videoConfig): ReplicateVideoGenerationProvider
+    {
+        $apiConfig = new ReplicateApiConfig('test-token');
+        $replicate = new ReplicateClient($httpClient, $apiConfig);
+
+        return new ReplicateVideoGenerationProvider(
+            $replicate,
+            new ReplicateVideoInputMapper(),
+            $videoConfig,
+        );
+    }
+}

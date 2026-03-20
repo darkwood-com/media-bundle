@@ -6,27 +6,24 @@ namespace App\Infrastructure\Trailer\Provider;
 
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Application\Trailer\Port\VideoGenerationProviderInterface;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoInputMapper;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig;
-use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * Real video generation provider backed by Replicate's HTTP API.
  *
- * This implementation is intentionally CLI-friendly and relies on simple polling
- * instead of webhooks. It:
- *  - submits a prediction
- *  - polls until terminal state
- *  - downloads the resulting video to a local path
- *  - returns a GeneratedAssetResult with rich provider metadata
+ * HTTP is delegated to {@see ReplicateClient}; this class only orchestrates
+ * presets, input mapping, polling, and local download paths.
  */
 final class ReplicateVideoGenerationProvider implements VideoGenerationProviderInterface
 {
     private const PROVIDER_NAME = 'replicate-video';
-    private const API_BASE_URL = 'https://api.replicate.com/v1';
 
     public function __construct(
-        private readonly HttpClientInterface $httpClient,
+        private readonly ReplicateClient $replicateClient,
+        private readonly ReplicateVideoInputMapper $videoInputMapper,
         private readonly ReplicateVideoProviderConfig $config,
     ) {
     }
@@ -40,30 +37,38 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             throw new \RuntimeException('Replicate video provider is disabled by configuration.');
         }
 
-        if ($this->config->apiToken === '') {
+        if (!$this->replicateClient->hasApiToken()) {
             throw new \RuntimeException('Replicate video provider is misconfigured (missing API token).');
         }
 
-        $resolvedModel = $this->resolveModelIdentifier($options);
+        $presetKey = $this->resolvePresetKey($options);
+        $resolvedModel = $this->resolveModelIdentifier($options, $presetKey);
         if ($resolvedModel === '') {
             throw new \RuntimeException(
-                'Replicate video provider: set TRAILER_VIDEO_REPLICATE_MODEL, or pass replicate_preset / replicate_model in options.'
+                'Replicate video provider: set TRAILER_VIDEO_REPLICATE_MODEL or TRAILER_VIDEO_REPLICATE_DEFAULT_PRESET, or pass replicate_preset / replicate_model in options.'
             );
         }
 
+        $presetInput = $this->presetBaseInput($presetKey);
         $targetPath = $options['target_path'] ?? $this->defaultPath($prompt, 'mp4');
         $sceneId = $options['scene_id'] ?? null;
 
         $startedAt = new \DateTimeImmutable('now');
+        $startPoll = microtime(true);
 
-        $initialPrediction = $this->createPrediction($prompt, $options, $resolvedModel);
+        $input = $this->videoInputMapper->buildInput($resolvedModel, $presetInput, $prompt, $options);
+        $initialPrediction = $this->replicateClient->createPrediction([
+            'version' => $resolvedModel,
+            'input' => $input,
+        ]);
+
         $predictionId = (string) ($initialPrediction['id'] ?? '');
 
         if ($predictionId === '') {
             throw new \RuntimeException('Replicate video provider did not return a prediction id.');
         }
 
-        [$finalPrediction, $attempts] = $this->waitForPrediction($predictionId);
+        [$finalPrediction, $attempts] = $this->waitForPrediction($predictionId, $startPoll);
 
         $status = (string) ($finalPrediction['status'] ?? 'unknown');
 
@@ -87,7 +92,7 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
         }
 
         $output = $finalPrediction['output'] ?? null;
-        $outputUrl = $this->extractOutputUrl($output);
+        $outputUrl = $this->replicateClient->extractFirstOutputUrl($output);
 
         if ($outputUrl === null) {
             throw new \RuntimeException(sprintf(
@@ -96,7 +101,7 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             ));
         }
 
-        $this->downloadToPath($outputUrl, $targetPath);
+        $this->replicateClient->downloadToPath($outputUrl, $targetPath);
 
         $completedAt = new \DateTimeImmutable('now');
 
@@ -105,9 +110,7 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
             'provider_status' => $status,
             'prediction_id' => $predictionId,
             'model' => $resolvedModel,
-            'replicate_preset' => isset($options['replicate_preset']) && is_string($options['replicate_preset'])
-                ? $options['replicate_preset']
-                : null,
+            'replicate_preset' => $presetKey,
             'remote_output_url' => $outputUrl,
             'poll_attempts' => $attempts,
             'started_at' => $startedAt->format(\DateTimeInterface::ATOM),
@@ -129,41 +132,42 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
 
     /**
      * @param array<string, mixed> $options
-     *
+     */
+    private function resolvePresetKey(array $options): ?string
+    {
+        $fromCall = $options['replicate_preset'] ?? null;
+        if (is_string($fromCall) && $fromCall !== '') {
+            return $fromCall;
+        }
+
+        $fromConfig = $this->config->defaultPreset;
+        if ($fromConfig !== '') {
+            return $fromConfig;
+        }
+
+        return null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    private function createPrediction(string $prompt, array $options, string $modelVersion): array
+    private function presetBaseInput(?string $presetKey): array
     {
-        $input = $this->buildReplicateInput($prompt, $options);
+        if ($presetKey === null) {
+            return [];
+        }
 
-        $body = [
-            'version' => $modelVersion,
-            'input' => $input,
-        ];
-
-        $response = $this->httpClient->request('POST', self::API_BASE_URL . '/predictions', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->config->apiToken,
-                'Content-Type' => 'application/json',
-            ],
-            'json' => $body,
-        ]);
-
-        /** @var array<string, mixed> $data */
-        $data = $response->toArray(false);
-
-        return $data;
+        return ReplicateVideoModelPresets::resolve($presetKey)['input'];
     }
 
     /**
      * @param array<string, mixed> $options
      */
-    private function resolveModelIdentifier(array $options): string
+    private function resolveModelIdentifier(array $options, ?string $presetKey): string
     {
         $model = $this->config->model;
 
-        $presetKey = $options['replicate_preset'] ?? null;
-        if (is_string($presetKey) && $presetKey !== '') {
+        if ($presetKey !== null) {
             $resolved = ReplicateVideoModelPresets::resolve($presetKey);
             $model = $resolved['model'];
         }
@@ -177,49 +181,26 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
     }
 
     /**
-     * Preset defaults, then replicate_input, then prompt / duration / seed from options.
-     *
-     * @param array<string, mixed> $options
-     *
-     * @return array<string, mixed>
-     */
-    private function buildReplicateInput(string $prompt, array $options): array
-    {
-        $input = [];
-
-        $presetKey = $options['replicate_preset'] ?? null;
-        if (is_string($presetKey) && $presetKey !== '') {
-            $input = ReplicateVideoModelPresets::resolve($presetKey)['input'];
-        }
-
-        if (isset($options['replicate_input']) && is_array($options['replicate_input'])) {
-            $input = array_merge($input, $options['replicate_input']);
-        }
-
-        $input['prompt'] = $prompt;
-
-        if (isset($options['duration'])) {
-            $input['duration'] = (int) $options['duration'];
-        }
-
-        if (isset($options['seed'])) {
-            $input['seed'] = $options['seed'];
-        }
-
-        return $input;
-    }
-
-    /**
      * @return array{0: array<string, mixed>, 1: int}
      */
-    private function waitForPrediction(string $predictionId): array
+    private function waitForPrediction(string $predictionId, float $pollStartedAt): array
     {
         $attempts = 0;
+        $maxDuration = $this->config->maxPollDurationSeconds;
 
         while (true) {
             ++$attempts;
 
-            $prediction = $this->getPrediction($predictionId);
+            if ($maxDuration > 0 && (microtime(true) - $pollStartedAt) >= $maxDuration) {
+                throw new \RuntimeException(sprintf(
+                    'Replicate prediction %s exceeded poll timeout (%d seconds) after %d attempt(s).',
+                    $predictionId,
+                    $maxDuration,
+                    $attempts
+                ));
+            }
+
+            $prediction = $this->replicateClient->getPrediction($predictionId);
             $status = (string) ($prediction['status'] ?? '');
 
             if (in_array($status, ['succeeded', 'failed', 'canceled'], true)) {
@@ -235,71 +216,10 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
                 ));
             }
 
-            sleep($this->config->pollIntervalSeconds);
-        }
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function getPrediction(string $predictionId): array
-    {
-        $response = $this->httpClient->request('GET', self::API_BASE_URL . '/predictions/' . urlencode($predictionId), [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->config->apiToken,
-            ],
-        ]);
-
-        /** @var array<string, mixed> $data */
-        $data = $response->toArray(false);
-
-        return $data;
-    }
-
-    /**
-     * @param mixed $output
-     */
-    private function extractOutputUrl($output): ?string
-    {
-        if (is_string($output)) {
-            return $output;
-        }
-
-        if (is_array($output)) {
-            foreach ($output as $item) {
-                if (is_string($item)) {
-                    return $item;
-                }
+            $interval = $this->config->pollIntervalSeconds;
+            if ($interval > 0) {
+                sleep($interval);
             }
-        }
-
-        return null;
-    }
-
-    private function downloadToPath(string $url, string $targetPath): void
-    {
-        $dir = \dirname($targetPath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0o755, true);
-        }
-
-        $response = $this->httpClient->request('GET', $url);
-        $statusCode = $response->getStatusCode();
-        $content = $response->getContent(false);
-
-        if ($statusCode >= 400) {
-            throw new \RuntimeException(sprintf(
-                'Failed to download video from "%s" (HTTP %d).',
-                $url,
-                $statusCode
-            ));
-        }
-
-        if (@file_put_contents($targetPath, $content) === false) {
-            throw new \RuntimeException(sprintf(
-                'Failed to write downloaded video to "%s".',
-                $targetPath
-            ));
         }
     }
 
@@ -310,4 +230,3 @@ final class ReplicateVideoGenerationProvider implements VideoGenerationProviderI
         return sys_get_temp_dir() . '/replicate_video_' . $hash . '.' . $ext;
     }
 }
-
