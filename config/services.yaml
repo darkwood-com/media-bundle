@@ -18,6 +18,13 @@ parameters:
     trailer.video.replicate.poll_interval_seconds: '%env(int:default::TRAILER_VIDEO_REPLICATE_POLL_INTERVAL_SECONDS)%'
     trailer.video.replicate.max_attempts: '%env(int:default::TRAILER_VIDEO_REPLICATE_MAX_ATTEMPTS)%'
     trailer.video.replicate.poll_timeout_seconds: '%env(int:default::TRAILER_VIDEO_REPLICATE_POLL_TIMEOUT_SECONDS)%'
+
+    # Replicate voice (TTS) — reuses API token; enable alongside scene-1 real video if desired.
+    trailer.voice.replicate.enabled: '%env(bool:default::TRAILER_VOICE_REPLICATE_ENABLED)%'
+    trailer.voice.replicate.model: '%env(string:default::TRAILER_VOICE_REPLICATE_MODEL)%'
+    trailer.voice.replicate.voice_id: '%env(string:default::TRAILER_VOICE_REPLICATE_VOICE_ID)%'
+    trailer.voice.replicate.audio_format: '%env(string:default::TRAILER_VOICE_REPLICATE_AUDIO_FORMAT)%'
+
     replicate.api.base_url: 'https://api.replicate.com/v1'
 services:
     # default configuration for services in *this* file
@@ -45,9 +52,15 @@ services:
     App\Application\Trailer\Port\TrailerProjectSetupInterface:
         alias: App\Infrastructure\Trailer\Storage\LocalArtifactStorage
 
-    # Fake voice/video providers for MVP (no external AI APIs)
+    # Voice: fake by default; scene 1 can use Replicate TTS when enabled (see SceneAwareVoiceGenerationProvider).
     App\Application\Trailer\Port\VoiceGenerationProviderInterface:
-        alias: App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider
+        alias: App\Application\Trailer\Service\SceneAwareVoiceGenerationProvider
+
+    App\Application\Trailer\Service\SceneAwareVoiceGenerationProvider:
+        arguments:
+            $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider'
+            $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVoiceGenerationProvider'
+            $useRealForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
 
     # Scene-aware video provider: keeps fake as default, optionally routes scene 1 to a real provider.
     App\Application\Trailer\Port\VideoGenerationProviderInterface:
@@ -65,7 +78,17 @@ services:
         arguments:
             $videoProvider: '@App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
 
-    # Shared Replicate HTTP config (token + base URL; reuse for voice later)
+    App\Infrastructure\Trailer\Provider\Replicate\ReplicateVoiceProviderConfig:
+        arguments:
+            $enabled: '%trailer.voice.replicate.enabled%'
+            $model: '%trailer.voice.replicate.model%'
+            $voiceId: '%trailer.voice.replicate.voice_id%'
+            $audioFormat: '%trailer.voice.replicate.audio_format%'
+            $pollIntervalSeconds: '%trailer.video.replicate.poll_interval_seconds%'
+            $maxAttempts: '%trailer.video.replicate.max_attempts%'
+            $maxPollDurationSeconds: '%trailer.video.replicate.poll_timeout_seconds%'
+
+    # Shared Replicate HTTP config (token + base URL; used by video and voice)
     App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig:
         arguments:
             $apiToken: '%trailer.video.replicate.api_token%'

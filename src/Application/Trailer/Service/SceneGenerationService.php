@@ -183,6 +183,7 @@ final class SceneGenerationService
             $result = $this->voiceProvider->generateVoice($narration, [
                 'target_path' => $targetPath,
                 'scene_id' => $scene->id(),
+                'scene_number' => $scene->number(),
             ]);
             $metadata = $this->normalizeAssetMetadata($result->metadata, $result->path);
             $asset->complete($result->path, $metadata);
