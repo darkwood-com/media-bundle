@@ -7,11 +7,16 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # Defaults for env() "default:" processor (must be parameter names — not literals like 580).
+    trailer.default_max_parallel_scenes: 4
+    trailer.default_replicate_rate_predictions_per_minute: 580
+    trailer.default_replicate_rate_other_per_minute: 2800
+
     # Bounded parallel scene pipelines (Spatie Fork). Keep aligned with Replicate prediction throughput.
-    trailer.max_parallel_scenes: '%env(int:default:4:TRAILER_MAX_PARALLEL_SCENES)%'
+    trailer.max_parallel_scenes: '%env(int:default:trailer.default_max_parallel_scenes:TRAILER_MAX_PARALLEL_SCENES)%'
     # Sliding-window caps (per minute), slightly under Replicate docs (600 / 3000) to reduce burst 429s.
-    replicate.rate_limit.prediction_per_minute: '%env(int:default:580:TRAILER_REPLICATE_RATE_PREDICTIONS_PER_MINUTE)%'
-    replicate.rate_limit.other_per_minute: '%env(int:default:2800:TRAILER_REPLICATE_RATE_OTHER_PER_MINUTE)%'
+    replicate.rate_limit.prediction_per_minute: '%env(int:default:trailer.default_replicate_rate_predictions_per_minute:TRAILER_REPLICATE_RATE_PREDICTIONS_PER_MINUTE)%'
+    replicate.rate_limit.other_per_minute: '%env(int:default:trailer.default_replicate_rate_other_per_minute:TRAILER_REPLICATE_RATE_OTHER_PER_MINUTE)%'
 
     # Shared toggle (TRAILER_REAL_FOR_FIRST_SCENE_ONLY): 1/true = only scene 1 uses real when Replicate is wired;
     # 0/false = all scenes use real. Applies identically to video and voice.
