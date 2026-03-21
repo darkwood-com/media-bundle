@@ -17,7 +17,8 @@ use Spatie\Fork\Fork;
 
 /**
  * Flow step: run one scene flow per scene; scenes may execute in parallel (Spatie Fork) when enabled.
- * Parent merges fork results and persists so project.json stays consistent.
+ * Fork workers persist each scene via {@see TrailerProjectRepositoryInterface::mergeSceneAtIndex} as they finish;
+ * the parent merges in-memory state and reloads the project from disk once all workers return.
  *
  * @extends Flow<TrailerGenerationPayload, TrailerGenerationPayload>
  */
@@ -85,6 +86,11 @@ final class ProcessTrailerScenesFlow extends Flow
             $this->mergeForkSceneResult($payload, $result);
         }
 
+        $reloaded = $this->projectRepository->get($payload->projectId);
+        if ($reloaded !== null) {
+            $payload->project = $reloaded;
+        }
+
         return $payload;
     }
 
@@ -105,8 +111,6 @@ final class ProcessTrailerScenesFlow extends Flow
         if ($result['anyFailed'] ?? false) {
             $payload->anyFailed = true;
         }
-
-        $this->projectRepository->save($project);
     }
 
     private function isSceneForkParallelEnabled(): bool

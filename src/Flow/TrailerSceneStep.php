@@ -63,7 +63,8 @@ final class TrailerSceneStep
     }
 
     /**
-     * Runs generation + scene mux only; does not append parent clip reports or save (used when scenes are forked).
+     * Runs generation + scene mux, persists this scene into project.json under a file lock (parallel-safe),
+     * then returns data for the parent Flow (clip report ordering). Does not append parent clip reports.
      */
     public function processSceneForFork(TrailerGenerationPayload $generation, int $sceneIndex): array
     {
@@ -79,6 +80,8 @@ final class TrailerSceneStep
         if (!$scene instanceof Scene) {
             throw new \LogicException('Scene not found at index ' . $sceneIndex . ' during fork merge.');
         }
+
+        $this->projectRepository->mergeSceneAtIndex($generation->projectId, $sceneIndex, $scene);
 
         $clipReport = $payload->clipReport;
         if (!$clipReport instanceof SceneClipRenderReport) {
@@ -157,6 +160,7 @@ final class TrailerSceneStep
             }
         }
 
+        // scene.mp4 only when the scene completed successfully; failed scenes skip mux (renderer is defensive too).
         if ($scene->status() === SceneStatus::Completed) {
             $clipReport = $this->sceneClipRenderer->renderIfPossible($projectId, $scene);
         } else {
