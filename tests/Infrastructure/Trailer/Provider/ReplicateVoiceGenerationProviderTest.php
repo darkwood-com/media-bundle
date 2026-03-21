@@ -7,6 +7,7 @@ namespace App\Tests\Infrastructure\Trailer\Provider;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Tests\Support\ReplicateTestRateLimiterFactory;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVoiceProviderConfig;
 use App\Infrastructure\Trailer\Provider\ReplicateVoiceGenerationProvider;
@@ -316,7 +317,7 @@ final class ReplicateVoiceGenerationProviderTest extends TestCase
     private function makeProvider(HttpClientInterface $httpClient, ReplicateVoiceProviderConfig $voiceConfig): ReplicateVoiceGenerationProvider
     {
         $apiConfig = new ReplicateApiConfig('test-token');
-        $replicate = new ReplicateClient($httpClient, $apiConfig);
+        $replicate = new ReplicateClient($httpClient, $apiConfig, ReplicateTestRateLimiterFactory::create());
 
         return new ReplicateVoiceGenerationProvider($replicate, $voiceConfig);
     }

@@ -9,13 +9,16 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * Thin HTTP wrapper around Replicate's predictions API and output downloads.
- * Keeps orchestration/providers free of URLs, headers, and response parsing.
+ * Applies sliding-window rate limits (prediction creates vs other API calls) and retries 429 with backoff.
  */
 final class ReplicateClient
 {
+    private const MAX_429_RETRIES = 10;
+
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly ReplicateApiConfig $apiConfig,
+        private readonly ReplicateSlidingWindowRateLimiter $rateLimiter,
     ) {
     }
 
@@ -64,12 +67,18 @@ final class ReplicateClient
      */
     public function createPrediction(array $body): array
     {
-        $response = $this->httpClient->request('POST', $this->endpoint('/predictions'), [
-            'headers' => $this->jsonHeaders(),
-            'json' => $body,
-        ]);
+        $response = $this->requestWithRateLimitAnd429Retry(
+            'POST',
+            $this->endpoint('/predictions'),
+            [
+                'headers' => $this->jsonHeaders(),
+                'json' => $body,
+            ],
+            'prediction create',
+            'prediction',
+        );
 
-        return $this->decodePredictionJsonResponse($response, 'prediction create');
+        return $this->decodeSuccessfulPredictionJsonResponse($response, 'prediction create');
     }
 
     /**
@@ -77,11 +86,17 @@ final class ReplicateClient
      */
     public function getPrediction(string $predictionId): array
     {
-        $response = $this->httpClient->request('GET', $this->endpoint('/predictions/' . rawurlencode($predictionId)), [
-            'headers' => $this->bearerHeaders(),
-        ]);
+        $response = $this->requestWithRateLimitAnd429Retry(
+            'GET',
+            $this->endpoint('/predictions/' . rawurlencode($predictionId)),
+            [
+                'headers' => $this->bearerHeaders(),
+            ],
+            'prediction get',
+            'other',
+        );
 
-        return $this->decodePredictionJsonResponse($response, 'prediction get');
+        return $this->decodeSuccessfulPredictionJsonResponse($response, 'prediction get');
     }
 
     public function downloadToPath(string $url, string $targetPath): void
@@ -137,39 +152,66 @@ final class ReplicateClient
     }
 
     /**
-     * @param mixed $value
+     * @param 'prediction'|'other' $rateKind
      */
-    private function findFirstHttpUrl(mixed $value): ?string
-    {
-        if (is_string($value)) {
-            return $this->isHttpUrlString($value) ? $value : null;
-        }
-
-        if (!is_array($value)) {
-            return null;
-        }
-
-        foreach ($value as $item) {
-            $found = $this->findFirstHttpUrl($item);
-            if ($found !== null) {
-                return $found;
+    private function requestWithRateLimitAnd429Retry(
+        string $method,
+        string $url,
+        array $options,
+        string $contextLabel,
+        string $rateKind,
+    ): ResponseInterface {
+        $lastStatus = 0;
+        for ($attempt = 0; $attempt <= self::MAX_429_RETRIES; ++$attempt) {
+            if ($rateKind === 'prediction') {
+                $this->rateLimiter->acquireBeforePredictionCreate();
+            } else {
+                $this->rateLimiter->acquireBeforeOtherApiCall();
             }
+
+            $response = $this->httpClient->request($method, $url, $options);
+            $lastStatus = $response->getStatusCode();
+
+            if ($lastStatus === 429) {
+                $this->sleepAfter429($response, $attempt);
+                continue;
+            }
+
+            return $response;
         }
 
-        return null;
+        throw new \RuntimeException(sprintf(
+            'Replicate %s failed: HTTP %d (too many 429 throttling responses).',
+            $contextLabel,
+            $lastStatus
+        ));
     }
 
-    private function isHttpUrlString(string $value): bool
+    private function sleepAfter429(ResponseInterface $response, int $attempt): void
     {
-        return str_starts_with($value, 'http://') || str_starts_with($value, 'https://');
+        $headers = $response->getHeaders();
+        $retryAfter = $headers['retry-after'][0] ?? null;
+        if (is_numeric($retryAfter)) {
+            $seconds = min(120, max(1, (int) $retryAfter));
+        } else {
+            $seconds = min(120, 2 ** min($attempt, 6));
+        }
+
+        sleep($seconds);
     }
 
     private function fetchLatestVersionIdForModel(string $owner, string $name): string
     {
         $path = '/models/' . rawurlencode($owner) . '/' . rawurlencode($name);
-        $response = $this->httpClient->request('GET', $this->endpoint($path), [
-            'headers' => $this->bearerHeaders(),
-        ]);
+        $response = $this->requestWithRateLimitAnd429Retry(
+            'GET',
+            $this->endpoint($path),
+            [
+                'headers' => $this->bearerHeaders(),
+            ],
+            'model lookup',
+            'other',
+        );
 
         $statusCode = $response->getStatusCode();
         $raw = $response->getContent(false);
@@ -209,7 +251,7 @@ final class ReplicateClient
     /**
      * @return array<string, mixed>
      */
-    private function decodePredictionJsonResponse(ResponseInterface $response, string $contextLabel): array
+    private function decodeSuccessfulPredictionJsonResponse(ResponseInterface $response, string $contextLabel): array
     {
         $statusCode = $response->getStatusCode();
         $raw = $response->getContent(false);
@@ -228,6 +270,34 @@ final class ReplicateClient
     }
 
     /**
+     * @param mixed $value
+     */
+    private function findFirstHttpUrl(mixed $value): ?string
+    {
+        if (is_string($value)) {
+            return $this->isHttpUrlString($value) ? $value : null;
+        }
+
+        if (!is_array($value)) {
+            return null;
+        }
+
+        foreach ($value as $item) {
+            $found = $this->findFirstHttpUrl($item);
+            if ($found !== null) {
+                return $found;
+            }
+        }
+
+        return null;
+    }
+
+    private function isHttpUrlString(string $value): bool
+    {
+        return str_starts_with($value, 'http://') || str_starts_with($value, 'https://');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function decodeJsonAssociative(string $raw): array
@@ -235,7 +305,6 @@ final class ReplicateClient
         if ($raw === '') {
             return [];
         }
-
         $decoded = json_decode($raw, true);
 
         return is_array($decoded) ? $decoded : [];

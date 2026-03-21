@@ -7,6 +7,7 @@ namespace App\Tests\Infrastructure\Trailer\Provider;
 use App\Application\Trailer\DTO\GeneratedAssetResult;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Tests\Support\ReplicateTestRateLimiterFactory;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicatePredictionFailedException;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoInputMapper;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoModelPresets;
@@ -406,7 +407,7 @@ final class ReplicateVideoGenerationProviderTest extends TestCase
     private function makeProvider(HttpClientInterface $httpClient, ReplicateVideoProviderConfig $videoConfig): ReplicateVideoGenerationProvider
     {
         $apiConfig = new ReplicateApiConfig('test-token');
-        $replicate = new ReplicateClient($httpClient, $apiConfig);
+        $replicate = new ReplicateClient($httpClient, $apiConfig, ReplicateTestRateLimiterFactory::create());
 
         return new ReplicateVideoGenerationProvider(
             $replicate,

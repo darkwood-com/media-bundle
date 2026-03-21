@@ -6,6 +6,7 @@ namespace App\Tests\Infrastructure\Trailer\Provider;
 
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig;
 use App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient;
+use App\Tests\Support\ReplicateTestRateLimiterFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -18,6 +19,7 @@ final class ReplicateClientTest extends TestCase
         $client = new ReplicateClient(
             $this->createMock(HttpClientInterface::class),
             new ReplicateApiConfig('t'),
+            ReplicateTestRateLimiterFactory::create(),
         );
 
         self::assertSame($hex, $client->resolvePredictionVersion($hex));
@@ -41,7 +43,7 @@ final class ReplicateClientTest extends TestCase
             )
             ->willReturn($response);
 
-        $client = new ReplicateClient($httpClient, new ReplicateApiConfig('token'));
+        $client = new ReplicateClient($httpClient, new ReplicateApiConfig('token'), ReplicateTestRateLimiterFactory::create());
 
         self::assertSame($resolved, $client->resolvePredictionVersion('acme/cool-model'));
     }
@@ -56,7 +58,7 @@ final class ReplicateClientTest extends TestCase
             ->method('request')
             ->willReturn($response);
 
-        $client = new ReplicateClient($httpClient, new ReplicateApiConfig('token'));
+        $client = new ReplicateClient($httpClient, new ReplicateApiConfig('token'), ReplicateTestRateLimiterFactory::create());
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('prediction create failed');
@@ -71,6 +73,7 @@ final class ReplicateClientTest extends TestCase
         $client = new ReplicateClient(
             $this->createMock(HttpClientInterface::class),
             new ReplicateApiConfig(''),
+            ReplicateTestRateLimiterFactory::create(),
         );
 
         $url = $client->extractFirstOutputUrl([

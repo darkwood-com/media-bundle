@@ -27,6 +27,7 @@ final class ProcessTrailerScenesFlow extends Flow
         private readonly TrailerSceneStep $sceneStep,
         private readonly JsonTrailerProjectMapper $projectMapper,
         private readonly TrailerProjectRepositoryInterface $projectRepository,
+        private readonly int $maxConcurrentScenes,
         ?DriverInterface $driver = null,
     ) {
         $job = function (mixed $payload): mixed {
@@ -74,7 +75,7 @@ final class ProcessTrailerScenesFlow extends Flow
             })($i);
         }
 
-        $maxParallel = min(8, $count);
+        $maxParallel = min(max(1, $this->maxConcurrentScenes), $count);
         $results = Fork::new()->concurrent($maxParallel)->run(...$callables);
 
         $ordered = array_values($results);

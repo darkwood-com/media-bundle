@@ -7,6 +7,12 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # Bounded parallel scene pipelines (Spatie Fork). Keep aligned with Replicate prediction throughput.
+    trailer.max_parallel_scenes: '%env(int:default:4:TRAILER_MAX_PARALLEL_SCENES)%'
+    # Sliding-window caps (per minute), slightly under Replicate docs (600 / 3000) to reduce burst 429s.
+    replicate.rate_limit.prediction_per_minute: '%env(int:default:580:TRAILER_REPLICATE_RATE_PREDICTIONS_PER_MINUTE)%'
+    replicate.rate_limit.other_per_minute: '%env(int:default:2800:TRAILER_REPLICATE_RATE_OTHER_PER_MINUTE)%'
+
     # Shared toggle (TRAILER_REAL_FOR_FIRST_SCENE_ONLY): 1/true = only scene 1 uses real when Replicate is wired;
     # 0/false = all scenes use real. Applies identically to video and voice.
     trailer.real_for_first_scene_only: '%env(bool:default::TRAILER_REAL_FOR_FIRST_SCENE_ONLY)%'
@@ -97,9 +103,19 @@ services:
             $apiToken: '%trailer.video.replicate.api_token%'
             $baseUrl: '%replicate.api.base_url%'
 
+    App\Infrastructure\Trailer\Provider\Replicate\ReplicateSlidingWindowRateLimiter:
+        arguments:
+            $stateFilePath: '%kernel.project_dir%/var/replicate-rate-limit-state.json'
+            $predictionCreatesPerMinute: '%replicate.rate_limit.prediction_per_minute%'
+            $otherApiCallsPerMinute: '%replicate.rate_limit.other_per_minute%'
+
     App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient:
         arguments:
             $httpClient: '@http_client'
+
+    App\Flow\TrailerGenerationFlowFactory:
+        arguments:
+            $maxParallelScenes: '%trailer.max_parallel_scenes%'
 
     App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig:
         arguments:
