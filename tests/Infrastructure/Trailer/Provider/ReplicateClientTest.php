@@ -83,6 +83,93 @@ final class ReplicateClientTest extends TestCase
         self::assertSame('https://cdn.example.com/out.mp4', $url);
     }
 
+    public function test_create_prediction_retries_on_429_then_succeeds(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient
+            ->expects(self::exactly(2))
+            ->method('request')
+            ->willReturnOnConsecutiveCalls(
+                $this->throttledResponse(),
+                $this->jsonResponse(['id' => 'pred', 'status' => 'starting'], 200),
+            );
+
+        $client = new ReplicateClient(
+            $httpClient,
+            new ReplicateApiConfig('token'),
+            ReplicateTestRateLimiterFactory::create(),
+            self::noopSleeper(),
+        );
+
+        $out = $client->createPrediction(['version' => 'v', 'input' => []]);
+
+        self::assertSame('pred', $out['id']);
+    }
+
+    public function test_create_prediction_fails_after_max_429_retries(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient
+            ->expects(self::exactly(11))
+            ->method('request')
+            ->willReturn($this->throttledResponse());
+
+        $client = new ReplicateClient(
+            $httpClient,
+            new ReplicateApiConfig('token'),
+            ReplicateTestRateLimiterFactory::create(),
+            self::noopSleeper(),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('too many 429');
+
+        $client->createPrediction(['version' => 'v', 'input' => []]);
+    }
+
+    public function test_get_prediction_retries_on_429_then_succeeds(): void
+    {
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient
+            ->expects(self::exactly(2))
+            ->method('request')
+            ->willReturnOnConsecutiveCalls(
+                $this->throttledResponse(),
+                $this->jsonResponse(['id' => 'pred', 'status' => 'succeeded'], 200),
+            );
+
+        $client = new ReplicateClient(
+            $httpClient,
+            new ReplicateApiConfig('token'),
+            ReplicateTestRateLimiterFactory::create(),
+            self::noopSleeper(),
+        );
+
+        $out = $client->getPrediction('pred');
+
+        self::assertSame('pred', $out['id']);
+        self::assertSame('succeeded', $out['status']);
+    }
+
+    /**
+     * @return callable(int): void
+     */
+    private static function noopSleeper(): callable
+    {
+        return static function (int $_s): void {
+        };
+    }
+
+    private function throttledResponse(): ResponseInterface
+    {
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('getStatusCode')->willReturn(429);
+        $response->method('getHeaders')->willReturn(['retry-after' => ['1']]);
+        $response->method('getContent')->with(false)->willReturn('{}');
+
+        return $response;
+    }
+
     /**
      * @param array<string, mixed> $data
      */

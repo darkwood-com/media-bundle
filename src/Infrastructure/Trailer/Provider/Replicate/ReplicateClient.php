@@ -15,10 +15,14 @@ final class ReplicateClient
 {
     private const MAX_429_RETRIES = 10;
 
+    /**
+     * @param \Closure(int): void|null $sleeper Injected in tests to avoid real sleeps on 429 backoff; production uses {@see sleep()}.
+     */
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly ReplicateApiConfig $apiConfig,
         private readonly ReplicateSlidingWindowRateLimiter $rateLimiter,
+        private readonly ?\Closure $sleeper = null,
     ) {
     }
 
@@ -197,7 +201,11 @@ final class ReplicateClient
             $seconds = min(120, 2 ** min($attempt, 6));
         }
 
-        sleep($seconds);
+        if ($this->sleeper !== null) {
+            ($this->sleeper)($seconds);
+        } else {
+            sleep($seconds);
+        }
     }
 
     private function fetchLatestVersionIdForModel(string $owner, string $name): string

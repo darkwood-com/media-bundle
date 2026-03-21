@@ -79,8 +79,7 @@ final class ProcessTrailerScenesFlow extends Flow
         $maxParallel = min(max(1, $this->maxConcurrentScenes), $count);
         $results = Fork::new()->concurrent($maxParallel)->run(...$callables);
 
-        $ordered = array_values($results);
-        usort($ordered, static fn (array $a, array $b): int => ($a['sceneIndex'] ?? 0) <=> ($b['sceneIndex'] ?? 0));
+        $ordered = self::sortForkSceneResultsBySceneIndex($results);
 
         foreach ($ordered as $result) {
             $this->mergeForkSceneResult($payload, $result);
@@ -92,6 +91,21 @@ final class ProcessTrailerScenesFlow extends Flow
         }
 
         return $payload;
+    }
+
+    /**
+     * Ensures fork worker results are merged in scene index order (completion order may differ).
+     *
+     * @param list<array{sceneIndex: int, sceneData: array<string, mixed>, clipReport: array<string, mixed>, anyFailed?: bool}> $results
+     *
+     * @return list<array{sceneIndex: int, sceneData: array<string, mixed>, clipReport: array<string, mixed>, anyFailed?: bool}>
+     */
+    public static function sortForkSceneResultsBySceneIndex(array $results): array
+    {
+        $ordered = array_values($results);
+        usort($ordered, static fn (array $a, array $b): int => ($a['sceneIndex'] ?? 0) <=> ($b['sceneIndex'] ?? 0));
+
+        return $ordered;
     }
 
     /**

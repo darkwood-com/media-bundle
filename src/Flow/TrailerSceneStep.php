@@ -20,8 +20,10 @@ use App\Infrastructure\Trailer\Storage\LocalArtifactStorage;
 /**
  * Single-scene pipeline: generate assets, render clip, persist scene clip metadata, save project.
  * Shared by {@see ProcessTrailerScenesFlow} and {@see TrailerSceneGenerationFlow}.
+ *
+ * Not final so PHPUnit can generate test doubles for flow orchestration tests.
  */
-final class TrailerSceneStep
+class TrailerSceneStep
 {
     public function __construct(
         private readonly SceneGenerationService $sceneGenerationService,

@@ -62,4 +62,14 @@ final readonly class SceneClipRenderReport
             $details,
         );
     }
+
+    /**
+     * Sorts in place by ascending scene number (matches scenario concat and rendering-summary ordering).
+     *
+     * @param list<self> $reports
+     */
+    public static function sortBySceneNumber(array &$reports): void
+    {
+        usort($reports, static fn (self $a, self $b): int => $a->sceneNumber <=> $b->sceneNumber);
+    }
 }

@@ -157,6 +157,56 @@ final class ScenarioConcatFfmpegRendererTest extends TestCase
         }
     }
 
+    public function test_concatenates_in_scene_number_order_when_scenes_added_out_of_order(): void
+    {
+        $ffmpeg = self::findFfmpegBinary();
+        $ffprobe = self::findFfprobeBinary();
+        if ($ffmpeg === null || $ffprobe === null) {
+            self::markTestSkipped('ffmpeg and ffprobe required in PATH');
+        }
+
+        $tmp = sys_get_temp_dir() . '/dw-scenario-concat-' . bin2hex(random_bytes(4));
+        self::assertTrue(mkdir($tmp, 0o755, true));
+
+        try {
+            $projectId = 'proj-order';
+            $base = $tmp . '/var/trailers/' . $projectId . '/scenes';
+
+            foreach ([['1', 'a'], ['2', 'b'], ['3', 'c']] as [$num, $id]) {
+                $dir = $base . '/' . $num . '-' . $id;
+                self::assertTrue(mkdir($dir, 0o755, true));
+                $this->assertSame(0, $this->runShell(sprintf(
+                    '%s -y -nostdin -hide_banner -loglevel error -f lavfi -i testsrc=duration=0.2:size=64x48:rate=10 -pix_fmt yuv420p %s',
+                    escapeshellarg($ffmpeg),
+                    escapeshellarg($dir . '/scene.mp4'),
+                )));
+            }
+
+            $storage = new LocalArtifactStorage(new TrailerPathResolver($tmp));
+            $renderer = new ScenarioConcatFfmpegRenderer($storage, $ffmpeg, $ffprobe);
+
+            $project = new TrailerProject($projectId, '/x.yaml', 'T');
+            $project->addScene(new Scene(id: 'c', number: 3, title: 'C', status: SceneStatus::Completed));
+            $project->addScene(new Scene(id: 'a', number: 1, title: 'A', status: SceneStatus::Completed));
+            $project->addScene(new Scene(id: 'b', number: 2, title: 'B', status: SceneStatus::Completed));
+
+            $result = $renderer->concatIfPossible($projectId, $project);
+
+            self::assertNull($result->skipReason);
+            self::assertNotNull($result->outputPath);
+            self::assertCount(3, $result->scenesIncludedInScenario);
+            self::assertSame(1, $result->scenesIncludedInScenario[0]['scene_number']);
+            self::assertSame(2, $result->scenesIncludedInScenario[1]['scene_number']);
+            self::assertSame(3, $result->scenesIncludedInScenario[2]['scene_number']);
+            self::assertSame(['a', 'b', 'c'], array_map(
+                static fn (array $row): string => $row['scene_id'],
+                $result->scenesIncludedInScenario,
+            ));
+        } finally {
+            $this->removeTree($tmp);
+        }
+    }
+
     private static function findFfmpegBinary(): ?string
     {
         $out = shell_exec('command -v ffmpeg 2>/dev/null');

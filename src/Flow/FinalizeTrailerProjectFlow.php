@@ -120,9 +120,6 @@ final class FinalizeTrailerProjectFlow extends Flow
             return;
         }
 
-        usort(
-            $payload->sceneClipReports,
-            static fn (SceneClipRenderReport $a, SceneClipRenderReport $b): int => $a->sceneNumber <=> $b->sceneNumber,
-        );
+        SceneClipRenderReport::sortBySceneNumber($payload->sceneClipReports);
     }
 }
