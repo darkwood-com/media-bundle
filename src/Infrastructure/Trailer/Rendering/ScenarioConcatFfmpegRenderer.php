@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Trailer\Rendering;
 
+use App\Domain\Trailer\Enum\SceneStatus;
+use App\Domain\Trailer\Scene;
 use App\Domain\Trailer\TrailerProject;
 use App\Infrastructure\Trailer\Storage\LocalArtifactStorage;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
- * Builds render/scenario.mp4 by FFmpeg concat demuxer: ordered scene clips, skipping
- * missing or undecodable scene.mp4. Does not throw; returns {@see ScenarioConcatResult}.
+ * Builds render/scenario.mp4 by FFmpeg concat demuxer (single sequential pass).
+ * Call only after all scene flows have finished — typically from {@see \App\Flow\FinalizeTrailerProjectFlow}.
+ * Scenes are concatenated in ascending {@see Scene::number()} order. Only {@see SceneStatus::Completed}
+ * scenes with a valid on-disk scene.mp4 are included; others are excluded without failing the whole concat.
  */
 final class ScenarioConcatFfmpegRenderer
 {
@@ -42,7 +46,26 @@ final class ScenarioConcatFfmpegRenderer
         $clipPaths = [];
         $excludedFromScenario = [];
         $stagedIncluded = [];
-        foreach ($project->scenes() as $scene) {
+
+        $scenes = $project->scenes();
+        usort($scenes, static fn (Scene $a, Scene $b): int => $a->number() <=> $b->number());
+
+        foreach ($scenes as $scene) {
+            if ($scene->status() !== SceneStatus::Completed) {
+                $excludedFromScenario[] = [
+                    'scene_number' => $scene->number(),
+                    'scene_id' => $scene->id(),
+                    'reason' => 'scene_not_completed',
+                ];
+                $this->logger->info('Trailer scenario concat: scene excluded (not completed)', [
+                    'project_id' => $projectId,
+                    'scene_id' => $scene->id(),
+                    'scene_number' => $scene->number(),
+                ]);
+
+                continue;
+            }
+
             $path = $this->artifactStorage->getSceneClipOutputPath($projectId, $scene);
             if ($this->isValidSceneClip($path)) {
                 $clipPaths[] = $path;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Infrastructure\Trailer\Rendering;
 
+use App\Domain\Trailer\Enum\SceneStatus;
 use App\Domain\Trailer\Scene;
 use App\Domain\Trailer\TrailerProject;
 use App\Infrastructure\Trailer\Rendering\ScenarioConcatFfmpegRenderer;
@@ -35,9 +36,9 @@ final class ScenarioConcatFfmpegRendererTest extends TestCase
             $renderer = new ScenarioConcatFfmpegRenderer($storage, '/bin/false', '/bin/false');
 
             $project = new TrailerProject($projectId, '/x.yaml', 'T');
-            $project->addScene(new Scene(id: 'a', number: 1, title: 'A'));
-            $project->addScene(new Scene(id: 'b', number: 2, title: 'B'));
-            $project->addScene(new Scene(id: 'c', number: 3, title: 'C'));
+            $project->addScene(new Scene(id: 'a', number: 1, title: 'A', status: SceneStatus::Completed));
+            $project->addScene(new Scene(id: 'b', number: 2, title: 'B', status: SceneStatus::Completed));
+            $project->addScene(new Scene(id: 'c', number: 3, title: 'C', status: SceneStatus::Completed));
 
             $result = $renderer->concatIfPossible($projectId, $project);
 
@@ -64,7 +65,7 @@ final class ScenarioConcatFfmpegRendererTest extends TestCase
             $renderer = new ScenarioConcatFfmpegRenderer($storage, 'ffmpeg', 'ffprobe');
 
             $project = new TrailerProject($projectId, '/x.yaml', 'T');
-            $project->addScene(new Scene(id: 'a', number: 1, title: 'A'));
+            $project->addScene(new Scene(id: 'a', number: 1, title: 'A', status: SceneStatus::Completed));
 
             $result = $renderer->concatIfPossible($projectId, $project);
 
@@ -92,7 +93,7 @@ final class ScenarioConcatFfmpegRendererTest extends TestCase
             $renderer = new ScenarioConcatFfmpegRenderer($storage, 'ffmpeg', 'ffprobe');
 
             $project = new TrailerProject($projectId, '/x.yaml', 'T');
-            $project->addScene(new Scene(id: 'a', number: 1, title: 'A'));
+            $project->addScene(new Scene(id: 'a', number: 1, title: 'A', status: SceneStatus::Completed));
 
             $renderer->concatIfPossible($projectId, $project);
 
@@ -136,9 +137,9 @@ final class ScenarioConcatFfmpegRendererTest extends TestCase
             $renderer = new ScenarioConcatFfmpegRenderer($storage, $ffmpeg, $ffprobe);
 
             $project = new TrailerProject($projectId, '/x.yaml', 'T');
-            $project->addScene(new Scene(id: 'a', number: 1, title: 'A'));
-            $project->addScene(new Scene(id: 'b', number: 2, title: 'B'));
-            $project->addScene(new Scene(id: 'c', number: 3, title: 'C'));
+            $project->addScene(new Scene(id: 'a', number: 1, title: 'A', status: SceneStatus::Completed));
+            $project->addScene(new Scene(id: 'b', number: 2, title: 'B', status: SceneStatus::Completed));
+            $project->addScene(new Scene(id: 'c', number: 3, title: 'C', status: SceneStatus::Completed));
 
             $result = $renderer->concatIfPossible($projectId, $project);
 

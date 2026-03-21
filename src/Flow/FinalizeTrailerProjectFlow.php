@@ -10,6 +10,7 @@ use App\Application\Trailer\Port\TrailerProjectSetupInterface;
 use App\Application\Trailer\Port\TrailerRendererInterface;
 use App\Flow\Model\TrailerGenerationPayload;
 use App\Infrastructure\Trailer\Rendering\RenderingSummaryJsonWriter;
+use App\Infrastructure\Trailer\Rendering\SceneClipRenderReport;
 use App\Infrastructure\Trailer\Rendering\ScenarioConcatFfmpegRenderer;
 use App\Infrastructure\Trailer\Rendering\TrailerRenderingMetadata;
 use App\Infrastructure\Trailer\Rendering\VideoBenchmarkReportWriter;
@@ -22,6 +23,7 @@ use Flow\IpStrategy\LinearIpStrategy;
 
 /**
  * Flow step: finalize project status, benchmark reports, scenario concat, rendering summary, manifest render.
+ * Scenario concat runs here only — after all scene flows in the pipeline have finished — and remains sequential.
  *
  * @extends Flow<TrailerGenerationPayload, TrailerGenerationPayload>
  */
@@ -77,6 +79,8 @@ final class FinalizeTrailerProjectFlow extends Flow
         $scenarioConcat = $this->scenarioConcatRenderer->concatIfPossible($projectId, $project);
         $payload->scenarioConcat = $scenarioConcat;
 
+        $this->sortSceneClipReportsForSummary($payload);
+
         $this->renderingSummaryWriter->write(
             $this->projectSetup->getRenderOutputDir($projectId),
             $payload->sceneClipReports,
@@ -105,5 +109,20 @@ final class FinalizeTrailerProjectFlow extends Flow
         );
 
         return $payload;
+    }
+
+    /**
+     * Deterministic scene order in rendering-summary.json (matches scenario concat ordering).
+     */
+    private function sortSceneClipReportsForSummary(TrailerGenerationPayload $payload): void
+    {
+        if ($payload->sceneClipReports === []) {
+            return;
+        }
+
+        usort(
+            $payload->sceneClipReports,
+            static fn (SceneClipRenderReport $a, SceneClipRenderReport $b): int => $a->sceneNumber <=> $b->sceneNumber,
+        );
     }
 }
