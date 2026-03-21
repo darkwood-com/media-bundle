@@ -44,4 +44,22 @@ final readonly class SceneClipRenderReport
             'details' => $this->details,
         ];
     }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $details = $data['details'] ?? [];
+        if (!is_array($details)) {
+            $details = [];
+        }
+
+        return new self(
+            is_string($data['scene_id'] ?? null) ? $data['scene_id'] : '',
+            (int) ($data['scene_number'] ?? 0),
+            is_string($data['outcome'] ?? null) ? $data['outcome'] : self::OUTCOME_SKIPPED_NOT_COMPLETED,
+            $details,
+        );
+    }
 }

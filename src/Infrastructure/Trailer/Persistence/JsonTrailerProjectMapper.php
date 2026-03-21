@@ -35,7 +35,7 @@ final class JsonTrailerProjectMapper
             'createdAt' => $project->createdAt()->format(self::DATE_FORMAT),
             'updatedAt' => $project->updatedAt()->format(self::DATE_FORMAT),
             'rendering' => $project->rendering(),
-            'scenes' => array_map($this->sceneToArray(...), $project->scenes()),
+            'scenes' => array_map(fn (Scene $s) => $this->sceneToArray($s), $project->scenes()),
         ];
     }
 
@@ -82,7 +82,7 @@ final class JsonTrailerProjectMapper
     /**
      * @return array<string, mixed>
      */
-    private function sceneToArray(Scene $scene): array
+    public function sceneToArray(Scene $scene): array
     {
         return [
             'id' => $scene->id(),
@@ -102,7 +102,7 @@ final class JsonTrailerProjectMapper
     /**
      * @param array<string, mixed> $data
      */
-    private function sceneFromArray(array $data): Scene
+    public function sceneFromArray(array $data): Scene
     {
         $scene = new Scene(
             id: $this->string($data, 'id'),
@@ -310,6 +310,16 @@ final class JsonTrailerProjectMapper
             }
         }
         return $out;
+    }
+
+    public function replaceSceneAtIndex(TrailerProject $project, int $index, Scene $scene): void
+    {
+        $scenes = $project->scenes();
+        if (!isset($scenes[$index])) {
+            return;
+        }
+        $scenes[$index] = $scene;
+        $this->setPrivateProperty($project, 'scenes', array_values($scenes));
     }
 
     private function setPrivateProperty(object $object, string $property, mixed $value): void

@@ -12,6 +12,7 @@ use App\Domain\Trailer\Asset;
 use App\Domain\Trailer\Enum\AssetStatus;
 use App\Domain\Trailer\Enum\AssetType;
 use App\Domain\Trailer\Scene;
+use Spatie\Fork\Fork;
 
 /**
  * Generates all assets (voice, video) for a single scene.
@@ -30,8 +31,7 @@ final class SceneGenerationService
     /**
      * Generate voice and video assets for the scene end-to-end.
      * Updates scene and asset status in place; on failure marks scene failed and preserves error message.
-     */
-    /**
+     *
      * @param array<string, mixed> $videoProviderOptions Merged into the video provider call (e.g. replicate_preset)
      */
     public function generateScene(string $projectId, Scene $scene, SceneDefinition $definition, array $videoProviderOptions = []): void
@@ -44,6 +44,26 @@ final class SceneGenerationService
 
         $voiceAsset = $this->findOrCreateAsset($scene, AssetType::Voice);
         $videoAsset = $this->findOrCreateVideoAsset($scene, $videoProviderOptions);
+
+        if ($this->shouldParallelizeVoiceAndVideo($definition)) {
+            $voiceAsset->markProcessing(null);
+            $videoAsset->markProcessing(null);
+            [$voiceOut, $videoOut] = Fork::new()->run(
+                fn () => $this->forkExecuteVoice($definition->narration, $voicePath, $scene->id(), $scene->number()),
+                fn () => $this->forkExecuteVideo(
+                    $definition->videoPrompt,
+                    $videoPath,
+                    $scene->id(),
+                    $scene->number(),
+                    $videoProviderOptions,
+                ),
+            );
+            $this->applyVoiceForkOutcome($scene, $voiceAsset, $voiceOut);
+            $this->applyVideoForkOutcome($scene, $videoAsset, $videoOut, $videoProviderOptions);
+            $this->finalizeSceneAfterParallelAssets($scene, $voiceOut, $videoOut);
+
+            return;
+        }
 
         if ($definition->narration !== '') {
             if (!$this->generateVoice($scene, $voiceAsset, $definition->narration, $voicePath)) {
@@ -102,6 +122,158 @@ final class SceneGenerationService
         )) {
             $scene->complete();
         }
+    }
+
+    private function shouldParallelizeVoiceAndVideo(SceneDefinition $definition): bool
+    {
+        if ($definition->narration === '' || $definition->videoPrompt === '') {
+            return false;
+        }
+
+        return $this->isForkParallelEnabled();
+    }
+
+    private function isForkParallelEnabled(): bool
+    {
+        if (!\function_exists('pcntl_fork')) {
+            return false;
+        }
+        if (!class_exists(Fork::class)) {
+            return false;
+        }
+
+        $v = $_ENV['TRAILER_PARALLEL_FORK'] ?? getenv('TRAILER_PARALLEL_FORK');
+        if ($v === false || $v === '') {
+            return true;
+        }
+
+        return $v !== '0';
+    }
+
+    /**
+     * @return array{ok: true, path: string, duration: ?float, metadata: array<string, mixed>}|array{ok: false, error: string, metadata: array<string, mixed>}
+     */
+    private function forkExecuteVoice(string $narration, string $targetPath, string $sceneId, int $sceneNumber): array
+    {
+        try {
+            $result = $this->voiceProvider->generateVoice($narration, [
+                'target_path' => $targetPath,
+                'scene_id' => $sceneId,
+                'scene_number' => $sceneNumber,
+            ]);
+
+            return [
+                'ok' => true,
+                'path' => $result->path,
+                'duration' => $result->duration,
+                'metadata' => $result->metadata,
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'error' => 'Voice generation failed: ' . $e->getMessage(),
+                'metadata' => ProviderFailureMetadata::forThrowable($e),
+            ];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $extraOptions
+     *
+     * @return array{ok: true, path: string, duration: ?float, metadata: array<string, mixed>}|array{ok: false, error: string, metadata: array<string, mixed>}
+     */
+    private function forkExecuteVideo(
+        string $prompt,
+        string $targetPath,
+        string $sceneId,
+        int $sceneNumber,
+        array $extraOptions,
+    ): array {
+        try {
+            $result = $this->videoProvider->generateVideo($prompt, array_merge([
+                'target_path' => $targetPath,
+                'scene_id' => $sceneId,
+                'scene_number' => $sceneNumber,
+            ], $extraOptions));
+
+            return [
+                'ok' => true,
+                'path' => $result->path,
+                'duration' => $result->duration,
+                'metadata' => $result->metadata,
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'error' => 'Video generation failed: ' . $e->getMessage(),
+                'metadata' => ProviderFailureMetadata::forThrowable($e),
+            ];
+        }
+    }
+
+    /**
+     * @param array{ok: true, path: string, duration: ?float, metadata: array<string, mixed>}|array{ok: false, error: string, metadata: array<string, mixed>} $out
+     */
+    private function applyVoiceForkOutcome(Scene $scene, Asset $asset, array $out): void
+    {
+        if ($out['ok']) {
+            $metadata = $this->normalizeAssetMetadata($out['metadata'], $out['path']);
+            $asset->complete($out['path'], $metadata);
+            if ($out['duration'] !== null) {
+                $scene->setDuration($out['duration']);
+            }
+
+            return;
+        }
+
+        $asset->updateMetadata($out['metadata']);
+        $asset->fail($out['error']);
+    }
+
+    /**
+     * @param array{ok: true, path: string, duration: ?float, metadata: array<string, mixed>}|array{ok: false, error: string, metadata: array<string, mixed>} $out
+     * @param array<string, mixed> $videoProviderOptions
+     */
+    private function applyVideoForkOutcome(Scene $scene, Asset $asset, array $out, array $videoProviderOptions = []): void
+    {
+        if ($out['ok']) {
+            $metadata = $this->normalizeAssetMetadata($out['metadata'], $out['path'], $videoProviderOptions);
+            $asset->complete($out['path'], $metadata);
+            if ($out['duration'] !== null && $scene->duration() === null) {
+                $scene->setDuration($out['duration']);
+            }
+
+            return;
+        }
+
+        $asset->updateMetadata($out['metadata']);
+        $asset->fail($out['error']);
+    }
+
+    /**
+     * @param array{ok: true, path: string, duration: ?float, metadata: array<string, mixed>}|array{ok: false, error: string, metadata: array<string, mixed>} $voiceOut
+     * @param array{ok: true, path: string, duration: ?float, metadata: array<string, mixed>}|array{ok: false, error: string, metadata: array<string, mixed>} $videoOut
+     */
+    private function finalizeSceneAfterParallelAssets(Scene $scene, array $voiceOut, array $videoOut): void
+    {
+        $voiceOk = $voiceOut['ok'];
+        $videoOk = $videoOut['ok'];
+        if (!$voiceOk && !$videoOk) {
+            $scene->fail($voiceOut['error'] . ' ' . $videoOut['error']);
+
+            return;
+        }
+        if (!$voiceOk) {
+            $scene->fail($voiceOut['error']);
+
+            return;
+        }
+        if (!$videoOk) {
+            $scene->fail($videoOut['error']);
+
+            return;
+        }
+        $scene->complete();
     }
 
     private function findOrCreateAsset(Scene $scene, AssetType $type): Asset
@@ -190,12 +362,14 @@ final class SceneGenerationService
             if ($result->duration !== null) {
                 $scene->setDuration($result->duration);
             }
+
             return true;
         } catch (\Throwable $e) {
             $message = 'Voice generation failed: ' . $e->getMessage();
             $asset->updateMetadata(ProviderFailureMetadata::forThrowable($e));
             $asset->fail($message);
             $scene->fail($message);
+
             return false;
         }
     }
@@ -218,12 +392,14 @@ final class SceneGenerationService
             if ($result->duration !== null && $scene->duration() === null) {
                 $scene->setDuration($result->duration);
             }
+
             return true;
         } catch (\Throwable $e) {
             $message = 'Video generation failed: ' . $e->getMessage();
             $asset->updateMetadata(ProviderFailureMetadata::forThrowable($e));
             $asset->fail($message);
             $scene->fail($message);
+
             return false;
         }
     }

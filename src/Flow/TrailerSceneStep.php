@@ -11,6 +11,7 @@ use App\Domain\Trailer\Enum\SceneStatus;
 use App\Domain\Trailer\Scene;
 use App\Flow\Model\TrailerGenerationPayload;
 use App\Flow\Model\TrailerScenePayload;
+use App\Infrastructure\Trailer\Persistence\JsonTrailerProjectMapper;
 use App\Infrastructure\Trailer\Rendering\SceneClipFfmpegRenderer;
 use App\Infrastructure\Trailer\Rendering\SceneClipRenderReport;
 use App\Infrastructure\Trailer\Rendering\TrailerRenderingMetadata;
@@ -27,16 +28,90 @@ final class TrailerSceneStep
         private readonly SceneClipFfmpegRenderer $sceneClipRenderer,
         private readonly LocalArtifactStorage $artifactStorage,
         private readonly TrailerProjectRepositoryInterface $projectRepository,
+        private readonly JsonTrailerProjectMapper $projectMapper,
     ) {
     }
 
     public function process(TrailerScenePayload $payload): TrailerScenePayload
     {
+        $this->runSceneGeneration($payload);
+
+        $generation = $payload->generation;
+        $project = $generation->project;
+        $index = $payload->sceneIndex;
+        if ($project === null) {
+            return $payload;
+        }
+
+        $scene = $project->scenes()[$index] ?? null;
+        if (!$scene instanceof Scene) {
+            return $payload;
+        }
+
+        $clipReport = $payload->clipReport;
+        if ($clipReport instanceof SceneClipRenderReport) {
+            $generation->sceneClipReports[] = $clipReport;
+        }
+
+        $this->projectRepository->save($project);
+
+        if ($scene->status() === SceneStatus::Failed) {
+            $generation->anyFailed = true;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Runs generation + scene mux only; does not append parent clip reports or save (used when scenes are forked).
+     */
+    public function processSceneForFork(TrailerGenerationPayload $generation, int $sceneIndex): array
+    {
+        $payload = new TrailerScenePayload($generation, $sceneIndex);
+        $this->runSceneGeneration($payload);
+
+        $project = $generation->project;
+        if ($project === null) {
+            throw new \LogicException('TrailerGenerationPayload has no project during fork merge.');
+        }
+
+        $scene = $project->scenes()[$sceneIndex] ?? null;
+        if (!$scene instanceof Scene) {
+            throw new \LogicException('Scene not found at index ' . $sceneIndex . ' during fork merge.');
+        }
+
+        $clipReport = $payload->clipReport;
+        if (!$clipReport instanceof SceneClipRenderReport) {
+            $clipReport = new SceneClipRenderReport(
+                $scene->id(),
+                $scene->number(),
+                SceneClipRenderReport::OUTCOME_SKIPPED_NOT_COMPLETED,
+            );
+        }
+
+        return [
+            'sceneIndex' => $sceneIndex,
+            'sceneData' => $this->projectMapper->sceneToArray($scene),
+            'clipReport' => $clipReport->toArray(),
+            'anyFailed' => $scene->status() === SceneStatus::Failed,
+        ];
+    }
+
+    /**
+     * Runs one scene using a {@see TrailerGenerationPayload}; updates the payload in place.
+     */
+    public function processForGeneration(TrailerGenerationPayload $generation, int $sceneIndex): void
+    {
+        $this->process(new TrailerScenePayload($generation, $sceneIndex));
+    }
+
+    private function runSceneGeneration(TrailerScenePayload $payload): void
+    {
         $generation = $payload->generation;
         $project = $generation->project;
         $definition = $generation->definition;
         if ($project === null || $definition === null) {
-            return $payload;
+            return;
         }
 
         $projectId = $generation->projectId;
@@ -45,7 +120,7 @@ final class TrailerSceneStep
         $scenes = $project->scenes();
         $scene = $scenes[$index] ?? null;
         if (!$scene instanceof Scene) {
-            return $payload;
+            return;
         }
 
         $sceneDef = $sceneDefinitions[$index] ?? null;
@@ -92,7 +167,6 @@ final class TrailerSceneStep
             );
         }
 
-        $generation->sceneClipReports[] = $clipReport;
         $payload->clipReport = $clipReport;
 
         $scene->setClipRender(TrailerRenderingMetadata::sceneClipPersist(
@@ -101,21 +175,5 @@ final class TrailerSceneStep
             $projectId,
             $scene,
         ));
-
-        $this->projectRepository->save($project);
-
-        if ($scene->status() === SceneStatus::Failed) {
-            $generation->anyFailed = true;
-        }
-
-        return $payload;
-    }
-
-    /**
-     * Runs one scene using a {@see TrailerGenerationPayload}; updates the payload in place.
-     */
-    public function processForGeneration(TrailerGenerationPayload $generation, int $sceneIndex): void
-    {
-        $this->process(new TrailerScenePayload($generation, $sceneIndex));
     }
 }
