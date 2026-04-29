@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
-use App\Infrastructure\Trailer\Provider\Replicate\ReplicateSlidingWindowRateLimiter;
+use App\Infrastructure\Video\Provider\Replicate\ReplicateSlidingWindowRateLimiter;
 
 /**
  * High-limit rate limiter for unit tests (avoids blocking; unique state file per instance).

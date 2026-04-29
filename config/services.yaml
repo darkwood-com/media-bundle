@@ -8,37 +8,37 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     # Defaults for env() "default:" processor (must be parameter names — not literals like 580).
-    trailer.default_max_parallel_scenes: 4
-    trailer.default_replicate_rate_predictions_per_minute: 580
-    trailer.default_replicate_rate_other_per_minute: 2800
+    video.default_max_parallel_scenes: 4
+    video.default_replicate_rate_predictions_per_minute: 580
+    video.default_replicate_rate_other_per_minute: 2800
 
     # Bounded parallel scene pipelines (Spatie Fork). Keep aligned with Replicate prediction throughput.
-    trailer.max_parallel_scenes: '%env(int:default:trailer.default_max_parallel_scenes:TRAILER_MAX_PARALLEL_SCENES)%'
+    video.max_parallel_scenes: '%env(int:default:video.default_max_parallel_scenes:VIDEO_MAX_PARALLEL_SCENES)%'
     # Sliding-window caps (per minute), slightly under Replicate docs (600 / 3000) to reduce burst 429s.
-    replicate.rate_limit.prediction_per_minute: '%env(int:default:trailer.default_replicate_rate_predictions_per_minute:TRAILER_REPLICATE_RATE_PREDICTIONS_PER_MINUTE)%'
-    replicate.rate_limit.other_per_minute: '%env(int:default:trailer.default_replicate_rate_other_per_minute:TRAILER_REPLICATE_RATE_OTHER_PER_MINUTE)%'
+    replicate.rate_limit.prediction_per_minute: '%env(int:default:video.default_replicate_rate_predictions_per_minute:VIDEO_REPLICATE_RATE_PREDICTIONS_PER_MINUTE)%'
+    replicate.rate_limit.other_per_minute: '%env(int:default:video.default_replicate_rate_other_per_minute:VIDEO_REPLICATE_RATE_OTHER_PER_MINUTE)%'
 
-    # Shared toggle (TRAILER_REAL_FOR_FIRST_SCENE_ONLY): 1/true = only scene 1 uses real when Replicate is wired;
+    # Shared toggle (VIDEO_REAL_FOR_FIRST_SCENE_ONLY): 1/true = only scene 1 uses real when Replicate is wired;
     # 0/false = all scenes use real. Applies identically to video and voice.
-    trailer.real_for_first_scene_only: '%env(bool:default::TRAILER_REAL_FOR_FIRST_SCENE_ONLY)%'
-    trailer.video.real_for_first_scene_only: '%trailer.real_for_first_scene_only%'
-    trailer.voice.real_for_first_scene_only: '%trailer.real_for_first_scene_only%'
+    video.real_for_first_scene_only: '%env(bool:default::VIDEO_REAL_FOR_FIRST_SCENE_ONLY)%'
+    video.video.real_for_first_scene_only: '%video.real_for_first_scene_only%'
+    video.voice.real_for_first_scene_only: '%video.real_for_first_scene_only%'
 
     # Replicate video provider configuration (env-driven)
     # Secrets (API token) must be provided via real env or .env.local files.
-    trailer.video.replicate.enabled: '%env(bool:default::TRAILER_VIDEO_REPLICATE_ENABLED)%'
-    trailer.video.replicate.api_token: '%env(string:default::TRAILER_VIDEO_REPLICATE_API_TOKEN)%'
-    trailer.video.replicate.model: '%env(string:default::TRAILER_VIDEO_REPLICATE_MODEL)%'
-    trailer.video.replicate.default_preset: '%env(string:default::TRAILER_VIDEO_REPLICATE_DEFAULT_PRESET)%'
-    trailer.video.replicate.poll_interval_seconds: '%env(int:default::TRAILER_VIDEO_REPLICATE_POLL_INTERVAL_SECONDS)%'
-    trailer.video.replicate.max_attempts: '%env(int:default::TRAILER_VIDEO_REPLICATE_MAX_ATTEMPTS)%'
-    trailer.video.replicate.poll_timeout_seconds: '%env(int:default::TRAILER_VIDEO_REPLICATE_POLL_TIMEOUT_SECONDS)%'
+    video.video.replicate.enabled: '%env(bool:default::VIDEO_VIDEO_REPLICATE_ENABLED)%'
+    video.video.replicate.api_token: '%env(string:default::VIDEO_VIDEO_REPLICATE_API_TOKEN)%'
+    video.video.replicate.model: '%env(string:default::VIDEO_VIDEO_REPLICATE_MODEL)%'
+    video.video.replicate.default_preset: '%env(string:default::VIDEO_VIDEO_REPLICATE_DEFAULT_PRESET)%'
+    video.video.replicate.poll_interval_seconds: '%env(int:default::VIDEO_VIDEO_REPLICATE_POLL_INTERVAL_SECONDS)%'
+    video.video.replicate.max_attempts: '%env(int:default::VIDEO_VIDEO_REPLICATE_MAX_ATTEMPTS)%'
+    video.video.replicate.poll_timeout_seconds: '%env(int:default::VIDEO_VIDEO_REPLICATE_POLL_TIMEOUT_SECONDS)%'
 
     # Replicate voice (TTS) — reuses API token; enable alongside scene-1 real video if desired.
-    trailer.voice.replicate.enabled: '%env(bool:default::TRAILER_VOICE_REPLICATE_ENABLED)%'
-    trailer.voice.replicate.model: '%env(string:default::TRAILER_VOICE_REPLICATE_MODEL)%'
-    trailer.voice.replicate.voice_id: '%env(string:default::TRAILER_VOICE_REPLICATE_VOICE_ID)%'
-    trailer.voice.replicate.audio_format: '%env(string:default::TRAILER_VOICE_REPLICATE_AUDIO_FORMAT)%'
+    video.voice.replicate.enabled: '%env(bool:default::VIDEO_VOICE_REPLICATE_ENABLED)%'
+    video.voice.replicate.model: '%env(string:default::VIDEO_VOICE_REPLICATE_MODEL)%'
+    video.voice.replicate.voice_id: '%env(string:default::VIDEO_VOICE_REPLICATE_VOICE_ID)%'
+    video.voice.replicate.audio_format: '%env(string:default::VIDEO_VOICE_REPLICATE_AUDIO_FORMAT)%'
 
     replicate.api.base_url: 'https://api.replicate.com/v1'
 services:
@@ -52,89 +52,89 @@ services:
     App\:
         resource: '../src/'
 
-    # Trailer project persistence (file-based)
-    App\Application\Trailer\Port\TrailerProjectRepositoryInterface:
-        alias: App\Infrastructure\Trailer\Persistence\FileTrailerProjectRepository
+    # Video project persistence (file-based)
+    App\Application\Video\Port\VideoProjectRepositoryInterface:
+        alias: App\Infrastructure\Video\Persistence\FileVideoProjectRepository
 
-    App\Infrastructure\Trailer\Persistence\FileTrailerProjectRepository:
+    App\Infrastructure\Video\Persistence\FileVideoProjectRepository:
         arguments:
             $projectDir: '%kernel.project_dir%'
 
-    # Trailer artifact storage (local filesystem)
-    App\Application\Trailer\Port\ArtifactStorageInterface:
-        alias: App\Infrastructure\Trailer\Storage\LocalArtifactStorage
+    # Video artifact storage (local filesystem)
+    App\Application\Video\Port\ArtifactStorageInterface:
+        alias: App\Infrastructure\Video\Storage\LocalArtifactStorage
 
-    App\Application\Trailer\Port\TrailerProjectSetupInterface:
-        alias: App\Infrastructure\Trailer\Storage\LocalArtifactStorage
+    App\Application\Video\Port\VideoProjectSetupInterface:
+        alias: App\Infrastructure\Video\Storage\LocalArtifactStorage
 
-    # Voice: scene routing matches video (SceneAwareVoiceGenerationProvider + trailer.real_for_first_scene_only).
-    App\Application\Trailer\Port\VoiceGenerationProviderInterface:
-        alias: App\Application\Trailer\Service\SceneAwareVoiceGenerationProvider
+    # Voice: scene routing matches video (SceneAwareVoiceGenerationProvider + video.real_for_first_scene_only).
+    App\Application\Video\Port\VoiceGenerationProviderInterface:
+        alias: App\Application\Video\Service\SceneAwareVoiceGenerationProvider
 
-    App\Application\Trailer\Service\SceneAwareVoiceGenerationProvider:
+    App\Application\Video\Service\SceneAwareVoiceGenerationProvider:
         arguments:
-            $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVoiceGenerationProvider'
-            $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVoiceGenerationProvider'
-            $realForFirstSceneOnly: '%trailer.voice.real_for_first_scene_only%'
+            $fakeProvider: '@App\Infrastructure\Video\Provider\FakeVoiceGenerationProvider'
+            $realProvider: '@?App\Infrastructure\Video\Provider\ReplicateVoiceGenerationProvider'
+            $realForFirstSceneOnly: '%video.voice.real_for_first_scene_only%'
 
-    # Scene-aware video: fake when no real provider; else env toggle (see trailer.real_for_first_scene_only).
-    App\Application\Trailer\Port\VideoGenerationProviderInterface:
-        alias: App\Application\Trailer\Service\SceneAwareVideoGenerationProvider
+    # Scene-aware video: fake when no real provider; else env toggle (see video.real_for_first_scene_only).
+    App\Application\Video\Port\VideoGenerationProviderInterface:
+        alias: App\Application\Video\Service\SceneAwareVideoGenerationProvider
 
-    App\Application\Trailer\Service\SceneAwareVideoGenerationProvider:
+    App\Application\Video\Service\SceneAwareVideoGenerationProvider:
         arguments:
-            $fakeProvider: '@App\Infrastructure\Trailer\Provider\FakeVideoGenerationProvider'
-            $realProvider: '@?App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
-            $realForFirstSceneOnly: '%trailer.video.real_for_first_scene_only%'
+            $fakeProvider: '@App\Infrastructure\Video\Provider\FakeVideoGenerationProvider'
+            $realProvider: '@?App\Infrastructure\Video\Provider\ReplicateVideoGenerationProvider'
+            $realForFirstSceneOnly: '%video.video.real_for_first_scene_only%'
 
     # Scene-1 video benchmark: call Replicate directly so a failed API call is not masked by the router’s fake fallback.
-    App\Application\Trailer\Service\SceneVideoBenchmarkService:
+    App\Application\Video\Service\SceneVideoBenchmarkService:
         arguments:
-            $videoProvider: '@App\Infrastructure\Trailer\Provider\ReplicateVideoGenerationProvider'
+            $videoProvider: '@App\Infrastructure\Video\Provider\ReplicateVideoGenerationProvider'
 
-    App\Infrastructure\Trailer\Provider\Replicate\ReplicateVoiceProviderConfig:
+    App\Infrastructure\Video\Provider\Replicate\ReplicateVoiceProviderConfig:
         arguments:
-            $enabled: '%trailer.voice.replicate.enabled%'
-            $model: '%trailer.voice.replicate.model%'
-            $voiceId: '%trailer.voice.replicate.voice_id%'
-            $audioFormat: '%trailer.voice.replicate.audio_format%'
-            $pollIntervalSeconds: '%trailer.video.replicate.poll_interval_seconds%'
-            $maxAttempts: '%trailer.video.replicate.max_attempts%'
-            $maxPollDurationSeconds: '%trailer.video.replicate.poll_timeout_seconds%'
+            $enabled: '%video.voice.replicate.enabled%'
+            $model: '%video.voice.replicate.model%'
+            $voiceId: '%video.voice.replicate.voice_id%'
+            $audioFormat: '%video.voice.replicate.audio_format%'
+            $pollIntervalSeconds: '%video.video.replicate.poll_interval_seconds%'
+            $maxAttempts: '%video.video.replicate.max_attempts%'
+            $maxPollDurationSeconds: '%video.video.replicate.poll_timeout_seconds%'
 
     # Shared Replicate HTTP config (token + base URL; used by video and voice)
-    App\Infrastructure\Trailer\Provider\Replicate\ReplicateApiConfig:
+    App\Infrastructure\Video\Provider\Replicate\ReplicateApiConfig:
         arguments:
-            $apiToken: '%trailer.video.replicate.api_token%'
+            $apiToken: '%video.video.replicate.api_token%'
             $baseUrl: '%replicate.api.base_url%'
 
-    App\Infrastructure\Trailer\Provider\Replicate\ReplicateSlidingWindowRateLimiter:
+    App\Infrastructure\Video\Provider\Replicate\ReplicateSlidingWindowRateLimiter:
         arguments:
             $stateFilePath: '%kernel.project_dir%/var/replicate-rate-limit-state.json'
             $predictionCreatesPerMinute: '%replicate.rate_limit.prediction_per_minute%'
             $otherApiCallsPerMinute: '%replicate.rate_limit.other_per_minute%'
 
-    App\Infrastructure\Trailer\Provider\Replicate\ReplicateClient:
+    App\Infrastructure\Video\Provider\Replicate\ReplicateClient:
         arguments:
             $httpClient: '@http_client'
 
-    App\Flow\TrailerGenerationFlowFactory:
+    App\Flow\VideoGenerationFlowFactory:
         arguments:
-            $maxParallelScenes: '%trailer.max_parallel_scenes%'
+            $maxParallelScenes: '%video.max_parallel_scenes%'
 
-    App\Infrastructure\Trailer\Provider\Replicate\ReplicateVideoProviderConfig:
+    App\Infrastructure\Video\Provider\Replicate\ReplicateVideoProviderConfig:
         arguments:
-            $enabled: '%trailer.video.replicate.enabled%'
-            $model: '%trailer.video.replicate.model%'
-            $defaultPreset: '%trailer.video.replicate.default_preset%'
-            $pollIntervalSeconds: '%trailer.video.replicate.poll_interval_seconds%'
-            $maxAttempts: '%trailer.video.replicate.max_attempts%'
-            $maxPollDurationSeconds: '%trailer.video.replicate.poll_timeout_seconds%'
+            $enabled: '%video.video.replicate.enabled%'
+            $model: '%video.video.replicate.model%'
+            $defaultPreset: '%video.video.replicate.default_preset%'
+            $pollIntervalSeconds: '%video.video.replicate.poll_interval_seconds%'
+            $maxAttempts: '%video.video.replicate.max_attempts%'
+            $maxPollDurationSeconds: '%video.video.replicate.poll_timeout_seconds%'
 
-    App\Application\Trailer\Port\TrailerRendererInterface:
-        alias: App\Infrastructure\Trailer\Rendering\ManifestTrailerRenderer
+    App\Application\Video\Port\VideoRendererInterface:
+        alias: App\Infrastructure\Video\Rendering\ManifestVideoRenderer
 
-    App\Infrastructure\Trailer\Storage\TrailerPathResolver:
+    App\Infrastructure\Video\Storage\VideoPathResolver:
         arguments:
             $projectDir: '%kernel.project_dir%'
 

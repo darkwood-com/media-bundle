@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\Application\Trailer\Exception\ProjectNotFoundException;
-use App\Application\Trailer\Exception\SceneNotFoundException;
-use App\Application\Trailer\Service\SceneRerunService;
-use App\Domain\Trailer\Enum\ProjectStatus;
+use App\Application\Video\Exception\ProjectNotFoundException;
+use App\Application\Video\Exception\SceneNotFoundException;
+use App\Application\Video\Service\SceneRerunService;
+use App\Domain\Video\Enum\ProjectStatus;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -17,8 +17,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 #[AsCommand(
-    name: 'app:trailer:rerun-scene',
-    description: 'Rerun a single scene from an existing saved trailer project.',
+    name: 'app:video:rerun-scene',
+    description: 'Rerun a single scene from an existing saved video project.',
 )]
 final class RerunSceneCliCommand extends Command
 {
@@ -34,7 +34,7 @@ final class RerunSceneCliCommand extends Command
         $this->addArgument(
             'project-id',
             InputArgument::REQUIRED,
-            'ID of the saved trailer project',
+            'ID of the saved video project',
         );
         $this->addArgument(
             'scene-id',
@@ -60,7 +60,7 @@ final class RerunSceneCliCommand extends Command
         }
 
         $project = $result->project;
-        $outputDir = $this->kernel->getProjectDir() . '/var/trailers/' . $project->id();
+        $outputDir = $this->kernel->getProjectDir() . '/var/videos/' . $project->id();
 
         $io->success('Scene rerun done.');
         $io->table(
@@ -73,7 +73,7 @@ final class RerunSceneCliCommand extends Command
             ],
         );
 
-        TrailerRenderCliSummary::write($io, $result);
+        VideoRenderCliSummary::write($io, $result);
 
         return $project->status() === ProjectStatus::Completed
             ? Command::SUCCESS
