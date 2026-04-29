@@ -1,5 +1,5 @@
 {
-    "name": "darkwood/video-bundle",
+    "name": "darkwood/media-bundle",
     "type": "symfony-bundle",
     "license": "MIT",
     "minimum-stability": "stable",
