@@ -40,7 +40,7 @@
         }
     },
     "scripts": {
-        "test": "tools/phpunit/vendor/bin/phpunit --configuration=tools/phpunit/phpunit.xml",
+        "test": "tools/phpunit/vendor/bin/phpunit --configuration=tools/phpunit/phpunit.dist.xml",
         "php-cs-fixer": "cd tools && castor app:tools:php-cs-fixer --dry-run",
         "phpstan": "cd tools && castor app:tools:phpstan",
         "phpunit": "cd tools && castor app:tools:phpunit",
