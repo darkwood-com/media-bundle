@@ -157,8 +157,9 @@ class VideoSceneStep
                     $baseVideo,
                 );
             } else {
-                $videoOpts = ($index === 0 && $firstSceneVideoOptions !== null) ? $firstSceneVideoOptions : [];
-                if ($index === 0) {
+                $videoOpts = [];
+                if ($index === 0 && $firstSceneVideoOptions !== null) {
+                    $videoOpts = $firstSceneVideoOptions;
                     unset($videoOpts['replicate_benchmark_presets']);
                 }
                 $this->sceneGenerationService->generateScene($projectId, $scene, $sceneDef, $videoOpts);
