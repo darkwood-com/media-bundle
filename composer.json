@@ -41,7 +41,7 @@
     },
     "scripts": {
         "test": "tools/phpunit/vendor/bin/phpunit --configuration=tools/phpunit/phpunit.dist.xml",
-        "php-cs-fixer": "cd tools && castor app:tools:php-cs-fixer --dry-run",
+        "php-cs-fixer": "cd tools && castor app:tools:php-cs-fixer",
         "phpstan": "cd tools && castor app:tools:phpstan",
         "phpunit": "cd tools && castor app:tools:phpunit",
         "auto-scripts": {
