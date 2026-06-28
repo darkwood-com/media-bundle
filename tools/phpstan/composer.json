@@ -9,7 +9,7 @@
         "php": ">=8.5",
         "ext-ctype": "*",
         "ext-iconv": "*",
-        "darkwood/flow": "^8.1@dev",
+        "darkwood/flow": "^8.1",
         "spatie/fork": "^1.2",
         "symfony/console": "^8.1",
         "symfony/dotenv": "^8.1",
