@@ -1,9 +1,15 @@
 {
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../../../Component/Flow"
+        }
+    ],
     "require": {
         "php": ">=8.5",
         "ext-ctype": "*",
         "ext-iconv": "*",
-        "darkwood/flow": "^8.0",
+        "darkwood/flow": "^8.1@dev",
         "spatie/fork": "^1.2",
         "symfony/console": "^8.1",
         "symfony/dotenv": "^8.1",
@@ -13,7 +19,7 @@
         "symfony/yaml": "^8.1"
     },
     "require-dev": {
-        "phpstan/phpstan": "^2.0",
+        "phpstan/phpstan": "^2.2",
         "symfony/phpunit-bridge": "^8.1"
     },
     "autoload": {
