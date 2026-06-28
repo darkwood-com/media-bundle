@@ -1,10 +1,4 @@
 {
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../../../../Component/Flow"
-        }
-    ],
     "require": {
         "php": ">=8.5",
         "ext-ctype": "*",
