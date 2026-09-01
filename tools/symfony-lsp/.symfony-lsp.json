@@ -1,0 +1,7 @@
+{
+    "version": 1,
+    "excludePaths": [
+        "config/reference.php",
+        "config/preload.php"
+    ]
+}
